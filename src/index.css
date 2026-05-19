@@ -1,0 +1,119 @@
+/* ── Chess Academy — Global Styles ── */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  /* Fonts */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+
+  /* Border radius */
+  --border-radius-sm: 4px;
+  --border-radius-md: 8px;
+  --border-radius-lg: 12px;
+  --border-radius-xl: 16px;
+
+  /* Light theme (default) */
+  --color-background-primary:   #FFFFFF;
+  --color-background-secondary: #F5F4EF;
+  --color-background-danger:    #FEF2F2;
+  --color-background-success:   #F0FDF4;
+
+  --color-text-primary:   #1A1916;
+  --color-text-secondary: #6B6A65;
+  --color-text-tertiary:  #9E9D99;
+  --color-text-success:   #16A34A;
+  --color-text-danger:    #DC2626;
+
+  --color-border-primary:   #D4D2CB;
+  --color-border-secondary: #E2E0D9;
+  --color-border-tertiary:  #ECEAE3;
+}
+
+/* Dark theme — automatically applied if OS prefers dark */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-background-primary:   #1C1B18;
+    --color-background-secondary: #252420;
+    --color-background-danger:    #2D1515;
+    --color-background-success:   #0F2115;
+
+    --color-text-primary:   #F0EEE6;
+    --color-text-secondary: #9E9B92;
+    --color-text-tertiary:  #6B6860;
+    --color-text-success:   #4ADE80;
+    --color-text-danger:    #F87171;
+
+    --color-border-primary:   #3A3830;
+    --color-border-secondary: #302E28;
+    --color-border-tertiary:  #272520;
+  }
+}
+
+html, body {
+  height: 100%;
+  font-family: var(--font-sans);
+  background: var(--color-background-secondary);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  padding: 0 16px;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar        { width: 6px; height: 6px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: var(--color-border-primary); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-text-tertiary); }
+
+/* Focus ring — keyboard nav */
+:focus-visible {
+  outline: 2px solid #4A43A0;
+  outline-offset: 2px;
+}
+
+/* App wrapper — max width + centering */
+.app-wrapper {
+  width: 100%;
+  max-width: 860px;
+  padding: 16px 0 40px;
+}
+
+/* Screen reader only */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.fade-in { animation: fadeIn 0.22s ease forwards; }
