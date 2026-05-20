@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from "react";
+import { useSupabaseProgress } from "./useSupabaseProgress";
+import ProfileScreen from "./ProfileScreen";
 
 // ════════════════════════════════════════════════════════════════
 //  1. CHESS AI — Minimax + Alpha-Beta Pruning
@@ -119,74 +121,57 @@ function detectOpening(hist){
 }
 
 const LESSONS=[
-  {id:0,track:"beginner",icon:"♟",title:"The Chessboard",
-   fen:"4k3/8/8/8/8/8/8/4K3 w - - 0 1",
+  {id:0,track:"beginner",icon:"♟",title:"The Chessboard",fen:"8/8/8/8/8/8/8/8 w - - 0 1",
    body:"A chessboard has 64 squares in an 8×8 grid. Files (columns) are labeled a–h left to right. Ranks (rows) are numbered 1–8 from White's side upward. The golden rule: 'light on right' — the bottom-right corner must always be a light square.",
    tip:"Squares are named by file + rank, e.g. e4, d5, g7. Every square has a unique name."},
-  {id:1,track:"beginner",icon:"♙",title:"Pawn Power",
-   fen:"4k3/pppppppp/8/8/8/8/PPPPPPPP/4K3 w - - 0 1",
+  {id:1,track:"beginner",icon:"♙",title:"Pawn Power",fen:"8/pppppppp/8/8/8/8/PPPPPPPP/8 w - - 0 1",
    body:"Pawns march forward — one square at a time, or two squares from their starting rank. They capture diagonally forward. A pawn reaching the 8th rank promotes to any piece (almost always a queen!). Pawns cannot retreat, so every pawn move is permanent.",
    tip:"En passant: if an enemy pawn moves two squares past yours on an adjacent file, you can capture it as if it moved only one square — but only immediately!"},
-  {id:2,track:"beginner",icon:"♘",title:"The Knight's Dance",
-   fen:"4k3/8/8/8/4N3/8/8/4K3 w - - 0 1",
+  {id:2,track:"beginner",icon:"♘",title:"The Knight's Dance",fen:"8/8/8/8/4N3/8/8/8 w - - 0 1",
    body:"Knights move in an L-shape — two squares in one direction, one perpendicular. They're the only pieces that jump over others. This makes knights especially deadly in closed positions where other pieces are blocked.",
    tip:"A knight in the center controls up to 8 squares. On the rim it controls only 2–4. 'A knight on the rim is dim!'"},
-  {id:3,track:"beginner",icon:"♗",title:"Bishop Diagonals",
-   fen:"4k3/8/8/8/4B3/8/8/4K3 w - - 0 1",
+  {id:3,track:"beginner",icon:"♗",title:"Bishop Diagonals",fen:"8/8/8/8/4B3/8/8/8 w - - 0 1",
    body:"Bishops slide diagonally any number of squares and stay forever on their starting color. You have one light-squared and one dark-squared bishop. They shine in open positions with long, unobstructed diagonals.",
    tip:"The bishop pair — both bishops working together — is a major strategic advantage, controlling squares of both colors."},
-  {id:4,track:"beginner",icon:"♖",title:"Rooks Rule Open Files",
-   fen:"4k3/8/8/8/4R3/8/8/4K3 w - - 0 1",
-   body:"Rooks slide horizontally or vertically any number of squares. They're most powerful on open files (no pawns blocking) and the 7th rank. Two rooks doubled on a file are devastating.",
+  {id:4,track:"beginner",icon:"♖",title:"Rooks Rule Open Files",fen:"8/8/8/8/4R3/8/8/8 w - - 0 1",
+   body:"Rooks slide horizontally or vertically any number of squares. They're most powerful on open files (no pawns blocking) and the 7th rank, where they attack the opponent's unadvanced pawns from behind. Two rooks doubled on a file are devastating.",
    tip:"Place rooks on open files early. Connecting your rooks (castling and clearing the back rank) is a key opening goal."},
-  {id:5,track:"beginner",icon:"♕",title:"Queen Supremacy",
-   fen:"4k3/8/8/8/4Q3/8/8/4K3 w - - 0 1",
+  {id:5,track:"beginner",icon:"♕",title:"Queen Supremacy",fen:"8/8/8/8/4Q3/8/8/8 w - - 0 1",
    body:"The queen combines the rook and bishop — she moves any number of squares in any direction. Worth roughly 9 pawns, she's by far the most powerful piece. Losing her without compensation almost always loses the game.",
    tip:"Don't bring the queen out too early — she can be chased by enemy pieces and you'll lose precious tempo."},
-  {id:6,track:"beginner",icon:"♔",title:"Check, Checkmate & Stalemate",
-   fen:"4k3/8/8/8/8/8/4Q3/4K3 w - - 0 1",
-   body:"When the king is under direct attack it's 'check' — you must escape by moving the king, blocking the attack, or capturing the attacker. If no escape exists: checkmate — game over! If the king isn't in check but has no legal move: stalemate — a draw.",
+  {id:6,track:"beginner",icon:"♔",title:"Check, Checkmate & Stalemate",fen:"4k3/8/8/8/8/8/4Q3/4K3 w - - 0 1",
+   body:"When the king is under direct attack it's 'check' — you must escape by moving the king, blocking the attack, or capturing the attacker. If no escape exists: checkmate — game over! If the king isn't in check but has no legal move: stalemate — a draw. Avoid stalemating a winning opponent!",
    tip:"Three ways to escape check: (1) move the king, (2) block the attacker, (3) capture the attacker."},
-  {id:7,track:"beginner",icon:"♙",title:"Three Opening Rules",
-   fen:"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-   body:"Three golden principles: (1) Control the center — play 1.e4 or 1.d4. (2) Develop all pieces — get knights and bishops to active squares quickly. (3) Castle early — protect your king behind pawns.",
+  {id:7,track:"beginner",icon:"♙",title:"Three Opening Rules",fen:"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+   body:"Three golden principles: (1) Control the center — play 1.e4 or 1.d4. (2) Develop all pieces — get knights and bishops to active squares quickly. (3) Castle early — protect your king behind pawns. Follow these and you'll start any game well!",
    tip:"Don't move the same piece twice in the opening unless absolutely necessary — every move should develop a new piece."},
-  {id:8,track:"intermediate",icon:"♙",title:"Center Control",
-   fen:"rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
-   body:"The four central squares — d4, e4, d5, e5 — are the most important battlefield. Pieces controlling the center dominate more of the board and restrict the opponent. Fight for the center from move one.",
+  {id:8,track:"intermediate",icon:"♙",title:"Center Control",fen:"rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+   body:"The four central squares — d4, e4, d5, e5 — are the most important battlefield. Pieces controlling the center dominate more of the board and restrict the opponent. Fight for the center from move one with pawns and pieces.",
    tip:"A pawn on e4 controls d5 and f5. A piece in the center has more scope than one on the edge."},
-  {id:9,track:"intermediate",icon:"♞",title:"Tactics: The Fork",
-   fen:"r1bqkb1r/pppp1ppp/2n2n2/4p3/4P3/5N2/PPPP1PPP/RNBQKBNR w KQkq - 2 3",
-   body:"A fork attacks two or more enemy pieces simultaneously with one move — the opponent can only save one. Knights are the best forking pieces because of their unpredictable L-shape.",
-   tip:"Look for undefended pieces as fork targets. An undefended piece next to another is a fork waiting to happen."},
-  {id:10,track:"intermediate",icon:"♗",title:"Tactics: The Pin",
-   fen:"rnb1kbnr/pp1ppppp/8/q1p5/2P5/8/PP1PPPPP/RNBQKBNR w KQkq - 1 3",
-   body:"A pin prevents a piece from moving because moving it would expose a more valuable piece behind it. An absolute pin — against the king — means the piece literally cannot legally move.",
+  {id:9,track:"intermediate",icon:"♞",title:"Tactics: The Fork",fen:"r1bqkb1r/pppp1ppp/2n2n2/4p3/4P3/5N2/PPPP1PPP/RNBQKBNR w KQkq - 2 3",
+   body:"A fork attacks two or more enemy pieces simultaneously with one move — the opponent can only save one. Knights are the best forking pieces because of their unpredictable L-shape. Always scan for fork opportunities on every move!",
+   tip:"Look for undefended pieces as fork targets. An undefended knight or bishop next to an undefended rook or queen is a fork waiting to happen."},
+  {id:10,track:"intermediate",icon:"♗",title:"Tactics: The Pin",fen:"rnb1kbnr/pp1ppppp/8/q1p5/2P5/8/PP1PPPPP/RNBQKBNR w KQkq - 1 3",
+   body:"A pin prevents a piece from moving because moving it would expose a more valuable piece behind it. An 'absolute pin' — against the king — means the piece literally cannot legally move. Use pins to paralyze enemy pieces, then pile on attackers.",
    tip:"A pinned piece cannot defend other pieces! Exploit this by attacking other targets while the pin keeps the defender stuck."},
-  {id:11,track:"intermediate",icon:"♔",title:"Castling: King Safety",
-   fen:"r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/3P1N2/PPP2PPP/RNBQK2R w KQkq - 0 5",
-   body:"Castling moves the king two squares toward a rook — the rook jumps over to the other side. Castle kingside (O-O) or queenside (O-O-O). Castle early to protect your king!",
-   tip:"After castling, avoid pushing h3/g3 without good reason — those moves weaken your king's shelter."},
-  {id:12,track:"intermediate",icon:"♙",title:"Discovered Attacks",
-   fen:"rnbqk2r/ppp2ppp/3p1n2/4p3/1bB1P3/2N2N2/PPPP1PPP/R1BQK2R w KQkq - 0 5",
-   body:"A discovered attack happens when you move one piece to reveal an attack from a piece behind it. These are extremely powerful because the opponent cannot block both threats at once.",
+  {id:11,track:"intermediate",icon:"♔",title:"Castling: King Safety",fen:"r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/3P1N2/PPP2PPP/RNBQK2R w KQkq - 0 5",
+   body:"Castling moves the king two squares toward a rook — the rook jumps over to the other side. Castle kingside (O-O) or queenside (O-O-O). Castle early to protect your king! You cannot castle if the king or rook has moved, the king is in check, or any square the king crosses is attacked.",
+   tip:"After castling, avoid pushing h3/g3 (or h6/g6) without good reason — those moves weaken your king's shelter."},
+  {id:12,track:"intermediate",icon:"♙",title:"Discovered Attacks",fen:"rnbqk2r/ppp2ppp/3p1n2/4p3/1bB1P3/2N2N2/PPPP1PPP/R1BQK2R w KQkq - 0 5",
+   body:"A discovered attack happens when you move one piece to reveal an attack from a piece behind it. The moved piece can simultaneously attack a different target — a 'double check' if the king is in check. These are extremely powerful because the opponent cannot block both threats at once.",
    tip:"Scan your pieces for 'hidden attackers' — pieces that would attack a valuable target if another piece moved out of the way."},
-  {id:13,track:"advanced",icon:"♙",title:"Pawn Structure",
-   fen:"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-   body:"Pawns are permanent — they cannot retreat. Doubled pawns are weak. Isolated pawns become targets. A passed pawn (nothing blocking its path to promotion) is a powerful long-term asset.",
+  {id:13,track:"advanced",icon:"♙",title:"Pawn Structure",fen:"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+   body:"Pawns are permanent — they cannot retreat. Weak pawn structures haunt you all game. Doubled pawns (two on same file) reduce rook mobility. Isolated pawns (no friendly neighbors) become permanent targets. A passed pawn (nothing blocking it from promotion) is a powerful long-term asset.",
    tip:"Think carefully before every pawn move — that decision can never be undone!"},
-  {id:14,track:"advanced",icon:"♖",title:"Tactics: The Skewer",
-   fen:"6k1/6pp/8/1b6/8/8/6PP/R5K1 w - - 0 1",
-   body:"A skewer is the reverse of a pin — you attack a valuable piece that must move, exposing a less valuable piece behind it. Rooks, bishops, and queens can execute skewers.",
-   tip:"After forcing the valuable piece to move, capture what was behind it."},
-  {id:15,track:"advanced",icon:"♔",title:"King & Pawn Endgames",
-   fen:"8/8/3k4/8/8/3K4/4P3/8 w - - 0 1",
-   body:"In the endgame, the king becomes an active fighting piece — march it toward the action! Key concepts: opposition, the rule of the square, and escorting pawns to promotion.",
-   tip:"In king-and-pawn endings, getting your king in front of your own pawn is usually the winning technique."},
-  {id:16,track:"advanced",icon:"♗",title:"Opening Systems",
-   fen:"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-   body:"Rather than memorizing every variation, master the principles: develop all pieces to active squares, fight for the center, castle early, then connect your rooks.",
-   tip:"Always ask 'why?' for every opening move. Understanding beats memorization every time."},
+  {id:14,track:"advanced",icon:"♖",title:"Tactics: The Skewer",fen:"6k1/6pp/8/1b6/8/8/6PP/R5K1 w - - 0 1",
+   body:"A skewer is the reverse of a pin — you attack a valuable piece that must move, exposing a less valuable piece behind it, which you then capture. Rooks, bishops, and queens can execute skewers. Always look at what's behind the piece you're targeting.",
+   tip:"After forcing the valuable piece to move, capture what was behind it. The 'prize' in a skewer is always the second piece."},
+  {id:15,track:"advanced",icon:"♔",title:"King & Pawn Endgames",fen:"8/8/3k4/8/8/3K4/4P3/8 w - - 0 1",
+   body:"In the endgame, the king becomes an active fighting piece — march it toward the action! Key concepts: 'opposition' (kings facing with one square between, forcing the other back), the 'rule of the square' (can your king catch a passed pawn?), and escorting pawns to promotion.",
+   tip:"In king-and-pawn endings, getting your king in front of your own pawn (with the opposition) is usually the winning technique."},
+  {id:16,track:"advanced",icon:"♗",title:"Opening Systems",fen:"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+   body:"Rather than memorizing every variation, master the principles behind openings: develop all pieces to active squares, fight for the center, castle early, then connect your rooks. Study 1–2 openings deeply with understanding rather than 10 openings by rote memorization.",
+   tip:"Always ask 'why?' for every opening move. Understanding the plan behind each move is far more powerful than memorizing sequences."},
 ];
 
 const PUZZLES=[
@@ -217,7 +202,7 @@ const SQ=46;
 // ════════════════════════════════════════════════════════════════
 //  4. MAIN COMPONENT
 // ════════════════════════════════════════════════════════════════
-export default function ChessAcademy() {
+export default function ChessAcademy({ user = null, onSignOut }) {
   const ChessLib=useRef(null);
   const [loaded,setLoaded]=useState(false);
   const [loadErr,setLoadErr]=useState(false);
@@ -299,8 +284,9 @@ export default function ChessAcademy() {
       .catch(()=>setLoadErr(true));
   },[]);
 
-  // ── Load stored progress
+  // ── Load stored progress (guests use local storage, logged-in users use Supabase)
   useEffect(()=>{
+    if(user) return; // Supabase hook handles this for logged-in users
     (async()=>{
       try{
         const r=await window.storage?.get("chess_v2");
@@ -316,8 +302,17 @@ export default function ChessAcademy() {
   },[]);
 
   async function saveProgress(dl=doneLessons,sp=solvedPz,sk=streak,st=stats){
+    if(user) return; // Supabase hook handles saves for logged-in users
     try{await window.storage?.set("chess_v2",JSON.stringify({done:[...dl],solved:[...sp],streak:sk,stats:st}));}catch{}
   }
+
+  // ── Supabase progress sync (logged-in users only)
+  const gameStartTime = useRef(null);
+  const { saveGame } = useSupabaseProgress({
+    user,
+    setDoneLessons, setSolvedPz, setStreak, setStats,
+    doneLessons, solvedPz, streak, stats,
+  });
 
   function play(k){if(soundOn) SND[k]?.();}
 
@@ -344,6 +339,7 @@ export default function ChessAcademy() {
     clearInterval(timerRef.current);
     const g=new ChessLib.current();
     gRef.current=g;
+    gameStartTime.current = Date.now();
     setBoard(g.board());
     setGStatus("playing");setWinner(null);setHist([]);setSel(null);setLegal([]);
     setLastMv(null);setInChk(false);setEvalBar(50);setHintSq(null);setAiThink(false);setOpening("");
@@ -443,6 +439,23 @@ export default function ChessAcademy() {
   useEffect(()=>{
     if(gStatus==="checkmate"||gStatus==="stalemate"||gStatus==="draw"||gStatus==="resign"){
       const iWon=winner===(pCol==="w"?"White":"Black");
+
+      // ── Save game to Supabase
+      const result = gStatus==="checkmate" ? (iWon?"win":"loss")
+                   : gStatus==="resign"    ? "loss"
+                   : "draw";
+      const durationS = gameStartTime.current
+        ? Math.round((Date.now() - gameStartTime.current) / 1000)
+        : 0;
+      saveGame({
+        result,
+        playerColor: pCol,
+        difficulty:  diff,
+        moves:       hist.map(m=>m.san),
+        opening,
+        durationS,
+      });
+
       if(gStatus==="checkmate"&&iWon){play("win");const ns={...stats,w:stats.w+1};setStats(ns);saveProgress(undefined,undefined,undefined,ns);}
       else if(gStatus==="checkmate"||gStatus==="resign"){play("over");if(gStatus!=="resign"){const ns={...stats,l:stats.l+1};setStats(ns);saveProgress(undefined,undefined,undefined,ns);}}
       else{play("over");const ns={...stats,d:stats.d+1};setStats(ns);saveProgress(undefined,undefined,undefined,ns);}
@@ -556,79 +569,29 @@ export default function ChessAcademy() {
   // ════════════════════════════════════════════════════════════════
   //  TUTOR
   // ════════════════════════════════════════════════════════════════
-  async function sendMsg() {
-  const q = tutIn.trim();
-  if (!q) return;
-
-  const g = screen === "puzzles" ? pzRef.current
-          : screen === "learn"   ? lgRef.current
-          : gRef.current;
-
-  const fen = g?.fen() ?? "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-  const mvs = g?.history().slice(-8).join(" ") || "none";
-  const ctx = screen === "learn"   ? `Current lesson: "${curLesson?.title}".`
-            : screen === "puzzles" && pz ? `Current puzzle: "${pz.cat}".`
-            : "";
-
-  const newMsgs = [...msgs, { role: "user", content: q }];
-  setMsgs(newMsgs);
-  setTutIn("");
-  setTutBusy(true);
-
-  const apiKey = import.meta.env.VITE_GEMINI_KEY;
-
-  // ── no key configured ──────────────────────────────────────────
-  if (!apiKey) {
-    setMsgs(p => [...p, {
-      role: "assistant",
-      content: "⚠️ Tutor not configured. Add VITE_GEMINI_KEY to your .env file and restart the dev server."
-    }]);
-    setTutBusy(false);
-    return;
-  }
-
-  try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction: {
-            parts: [{
-              text: `You are an encouraging, expert chess tutor inside Chess Academy. ${ctx} Current position FEN: ${fen}. Recent moves: ${mvs}. Be warm and concise (2–4 sentences). Use algebraic notation when referencing moves. Occasionally use chess emojis ♟♔♕.`
-            }]
-          },
-          contents: newMsgs.map(m => ({
-            role: m.role === "assistant" ? "model" : "user",
-            parts: [{ text: m.content }]
-          }))
+  async function sendMsg(){
+    const q=tutIn.trim();if(!q) return;
+    const g=screen==="puzzles"?pzRef.current:screen==="learn"?lgRef.current:gRef.current;
+    const fen=g?.fen()??"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    const mvs=g?.history().slice(-8).join(" ")||"none";
+    const ctx=screen==="learn"?`Current lesson: "${curLesson?.title}". `
+             :screen==="puzzles"&&pz?`Current puzzle type: "${pz.cat}". `:"";
+    const newMsgs=[...msgs,{role:"user",content:q}];
+    setMsgs(newMsgs);setTutIn("");setTutBusy(true);
+    try{
+      const res=await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          model:"claude-sonnet-4-20250514",max_tokens:1000,
+          system:`You are an encouraging, expert chess tutor for Chess Academy. ${ctx}Current position FEN: ${fen}. Recent moves: ${mvs}. Be warm, concise (2–4 sentences), use algebraic notation when helpful, and give concrete actionable advice. Use chess emojis ♟♔♕♖♗♘ occasionally.`,
+          messages:newMsgs.map(m=>({role:m.role,content:m.content}))
         })
-      }
-    );
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err?.error?.message ?? `HTTP ${res.status}`);
-    }
-
-    const data = await res.json();
-    const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    setMsgs(p => [...p, {
-      role: "assistant",
-      content: reply ?? "I didn't get a response — please try again."
-    }]);
-
-  } catch (e) {
-    setMsgs(p => [...p, {
-      role: "assistant",
-      content: `❌ Error: ${e.message}. Check your VITE_GEMINI_KEY in .env and try again.`
-    }]);
+      });
+      const data=await res.json();
+      setMsgs(p=>[...p,{role:"assistant",content:data.content?.[0]?.text??"Try again!"}]);
+    }catch{setMsgs(p=>[...p,{role:"assistant",content:"Connection error — please try again."}]);}
+    setTutBusy(false);
   }
-
-  setTutBusy(false);
-}
 
   // ════════════════════════════════════════════════════════════════
   //  BOARD RENDERER
@@ -794,7 +757,16 @@ export default function ChessAcademy() {
     return(
       <div style={{padding:"1rem 0 2rem",fontFamily:"var(--font-sans)"}}>
         <style>{`@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}`}</style>
-        <div style={{textAlign:"center",marginBottom:"1.75rem"}}>
+        {/* Profile button top-right */}
+        <div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}>
+          <button onClick={()=>setScreen("profile")}
+            style={{display:"flex",alignItems:"center",gap:6,fontSize:12,padding:"6px 12px",background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",cursor:"pointer",color:"var(--color-text-secondary)",transition:"border-color .15s"}}
+            onMouseEnter={e=>e.currentTarget.style.borderColor="#4A43A0"}
+            onMouseLeave={e=>e.currentTarget.style.borderColor=""}>
+            <span>👤</span>
+            <span>{user ? (user.user_metadata?.username ?? user.email?.split("@")[0]) : "Guest"}</span>
+          </button>
+        </div>
           <div style={{fontSize:62,lineHeight:1,marginBottom:10,animation:"float 3s ease-in-out infinite",display:"inline-block"}}>♟</div>
           <div style={{fontSize:27,fontWeight:600,color:"var(--color-text-primary)",marginBottom:6,letterSpacing:-.5}}>Chess Academy</div>
           <div style={{fontSize:14,color:"var(--color-text-secondary)"}}>Play, learn, and master the game of kings</div>
@@ -854,6 +826,21 @@ export default function ChessAcademy() {
       </div>
     );
   }
+
+  // ════════════════════════════════════════════════════════════════
+  //  PROFILE
+  // ════════════════════════════════════════════════════════════════
+  if(screen==="profile") return(
+    <ProfileScreen
+      user={user}
+      stats={stats}
+      doneLessons={doneLessons}
+      solvedPz={solvedPz}
+      streak={streak}
+      onBack={()=>setScreen("menu")}
+      onSignOut={onSignOut}
+    />
+  );
 
   // ════════════════════════════════════════════════════════════════
   //  SETTINGS
