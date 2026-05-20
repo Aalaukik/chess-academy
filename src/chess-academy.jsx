@@ -539,38 +539,79 @@ export default function ChessAcademy() {
   // ════════════════════════════════════════════════════════════════
   //  TUTOR
   // ════════════════════════════════════════════════════════════════
-  async function sendMsg(){
-    const q=tutIn.trim();if(!q) return;
-    const g=screen==="puzzles"?pzRef.current:screen==="learn"?lgRef.current:gRef.current;
-    const fen=g?.fen()??"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-    const mvs=g?.history().slice(-8).join(" ")||"none";
-    const ctx=screen==="learn"?`Current lesson: "${curLesson?.title}". `
-             :screen==="puzzles"&&pz?`Current puzzle type: "${pz.cat}". `:"";
-    const newMsgs=[...msgs,{role:"user",content:q}];
-    setMsgs(newMsgs);setTutIn("");setTutBusy(true);
-    try{
-      // Replace the entire fetch block inside sendMsg() with this:
-const res = await fetch(
-  `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${import.meta.env.VITE_GEMINI_KEY}`,
-  {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: newMessages.map(m => ({
-        role: m.role === "assistant" ? "model" : "user",
-        parts: [{ text: m.content }]
-      })),
-      systemInstruction: {
-        parts: [{ text: `You are an encouraging chess tutor. Position FEN: ${fen}. Recent moves: ${mvs}. Be concise (2–4 sentences).` }]
-      }
-    })
-  }
-);
-const data = await res.json();
-const reply = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "Try again!";
-setMsgs(p => [...p, { role: "assistant", content: reply }]);}catch{setMsgs(p=>[...p,{role:"assistant",content:"Connection error — please try again."}]);}
+  async function sendMsg() {
+  const q = tutIn.trim();
+  if (!q) return;
+
+  const g = screen === "puzzles" ? pzRef.current
+          : screen === "learn"   ? lgRef.current
+          : gRef.current;
+
+  const fen = g?.fen() ?? "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+  const mvs = g?.history().slice(-8).join(" ") || "none";
+  const ctx = screen === "learn"   ? `Current lesson: "${curLesson?.title}".`
+            : screen === "puzzles" && pz ? `Current puzzle: "${pz.cat}".`
+            : "";
+
+  const newMsgs = [...msgs, { role: "user", content: q }];
+  setMsgs(newMsgs);
+  setTutIn("");
+  setTutBusy(true);
+
+  const apiKey = import.meta.env.VITE_GEMINI_KEY;
+
+  // ── no key configured ──────────────────────────────────────────
+  if (!apiKey) {
+    setMsgs(p => [...p, {
+      role: "assistant",
+      content: "⚠️ Tutor not configured. Add VITE_GEMINI_KEY to your .env file and restart the dev server."
+    }]);
     setTutBusy(false);
+    return;
   }
+
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: {
+            parts: [{
+              text: `You are an encouraging, expert chess tutor inside Chess Academy. ${ctx} Current position FEN: ${fen}. Recent moves: ${mvs}. Be warm and concise (2–4 sentences). Use algebraic notation when referencing moves. Occasionally use chess emojis ♟♔♕.`
+            }]
+          },
+          contents: newMsgs.map(m => ({
+            role: m.role === "assistant" ? "model" : "user",
+            parts: [{ text: m.content }]
+          }))
+        })
+      }
+    );
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error?.message ?? `HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    setMsgs(p => [...p, {
+      role: "assistant",
+      content: reply ?? "I didn't get a response — please try again."
+    }]);
+
+  } catch (e) {
+    setMsgs(p => [...p, {
+      role: "assistant",
+      content: `❌ Error: ${e.message}. Check your VITE_GEMINI_KEY in .env and try again.`
+    }]);
+  }
+
+  setTutBusy(false);
+}
 
   // ════════════════════════════════════════════════════════════════
   //  BOARD RENDERER
