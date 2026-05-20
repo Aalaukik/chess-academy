@@ -767,6 +767,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
             <span>{user ? (user.user_metadata?.username ?? user.email?.split("@")[0]) : "Guest"}</span>
           </button>
         </div>
+        <div style={{textAlign:"center",marginBottom:"1.75rem"}}>
           <div style={{fontSize:62,lineHeight:1,marginBottom:10,animation:"float 3s ease-in-out infinite",display:"inline-block"}}>♟</div>
           <div style={{fontSize:27,fontWeight:600,color:"var(--color-text-primary)",marginBottom:6,letterSpacing:-.5}}>Chess Academy</div>
           <div style={{fontSize:14,color:"var(--color-text-secondary)"}}>Play, learn, and master the game of kings</div>
