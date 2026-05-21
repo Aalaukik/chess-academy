@@ -569,8 +569,18 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   // ════════════════════════════════════════════════════════════════
   //  TUTOR
   // ════════════════════════════════════════════════════════════════
+  const lastMsgTime = useRef(0);
+
   async function sendMsg(){
     const q=tutIn.trim();if(!q) return;
+
+    // ── Prevent spamming — enforce 3s cooldown between messages
+    const now=Date.now();
+    if(now - lastMsgTime.current < 3000){
+      setMsgs(p=>[...p,{role:"assistant",content:"⏳ Please wait a moment before sending another message."}]);
+      return;
+    }
+    lastMsgTime.current=now;
     const g=screen==="puzzles"?pzRef.current:screen==="learn"?lgRef.current:gRef.current;
     const fen=g?.fen()??"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     const mvs=g?.history().slice(-8).join(" ")||"none";
@@ -597,7 +607,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
       "gemini-2.0-flash",           // fallback (may need billing)
     ];
 
-    async function callGemini(modelName, retries=2, delayMs=2000){
+    async function callGemini(modelName, retries=1, delayMs=5000){
       // Prepend system prompt as first message — works with ALL model versions
       const contents=[
         {role:"user",   parts:[{text:`[System instructions — follow these throughout our conversation]: ${systemPrompt}`}]},
@@ -637,8 +647,8 @@ export default function ChessAcademy({ user = null, onSignOut }) {
       for(const model of MODELS){
         const {status,data}=await callGemini(model);
         if(status===404){lastErr=`Model ${model} not available`;continue;}
-        if(status===401||status===403){throw new Error("API key invalid or missing permission. Get a new key at aistudio.google.com/apikey");}
-        if(status===429){throw new Error("Rate limit exceeded — wait 60 seconds and try again.");}
+        if(status===429){throw new Error("Rate limit reached. Wait 1–2 minutes and try again. (Free tier: 30 requests/minute, 1,500/day)");}
+        if(status===401||status===403){throw new Error("API key invalid. Check VITE_GEMINI_KEY in Vercel → Settings → Environment Variables.");}
         if(status!==200||!data){lastErr=`HTTP ${status}`;continue;}
         reply=data?.candidates?.[0]?.content?.parts?.[0]?.text;
         if(reply) break;
