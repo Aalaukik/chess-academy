@@ -589,9 +589,9 @@ export default function ChessAcademy({ user = null, onSignOut }) {
     }
 
     // ── Fetch with auto-retry on 429 ─────────────────────────
-    async function callGemini(retries=3, delayMs=1000){
+    async function callGemini(retries=2, delayMs=2000){
       const res=await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`,
         {
           method:"POST",
           headers:{"Content-Type":"application/json"},
