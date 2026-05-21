@@ -588,10 +588,18 @@ export default function ChessAcademy({ user = null, onSignOut }) {
       setTutBusy(false);return;
     }
 
-    // ── Fetch with auto-retry on 429 ─────────────────────────
-    async function callGemini(retries=2, delayMs=2000){
+    // ── Try models in order until one responds ───────────────
+    const MODELS = [
+      "gemini-1.5-flash",
+      "gemini-1.5-flash-001",
+      "gemini-1.5-flash-8b",
+      "gemini-pro",
+      "gemini-1.0-pro",
+    ];
+
+    async function callGemini(modelName, retries=2, delayMs=2000){
       const res=await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`,
         {
           method:"POST",
           headers:{"Content-Type":"application/json"},
@@ -605,32 +613,30 @@ export default function ChessAcademy({ user = null, onSignOut }) {
           })
         }
       );
-
-      // Rate limited — wait and retry automatically
-      if(res.status===429 && retries>0){
+      if(res.status===429&&retries>0){
         await new Promise(r=>setTimeout(r,delayMs));
-        return callGemini(retries-1, delayMs*2);
+        return callGemini(modelName,retries-1,delayMs*2);
       }
-
-      if(!res.ok){
-        const err=await res.json().catch(()=>({}));
-        const msg=err?.error?.message??"";
-        if(res.status===400) throw new Error("Invalid request — check your VITE_GEMINI_KEY.");
-        if(res.status===401) throw new Error("API key rejected. Check VITE_GEMINI_KEY in your .env file.");
-        if(res.status===403) throw new Error("API key doesn't have permission. Enable 'Generative Language API' at console.cloud.google.com/apis/library");
-        if(res.status===429) throw new Error("Rate limit exceeded. Please wait 60 seconds and try again.");
-        if(res.status===404) throw new Error("Model not found. Check your VITE_GEMINI_KEY is valid.");
-        throw new Error(msg||`HTTP error ${res.status}`);
-      }
-
-      return res.json();
+      return {res, data: res.ok ? await res.json() : null};
     }
 
     try{
-      const data=await callGemini();
-      const reply=data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if(!reply) throw new Error("Empty response — please try again.");
+      let reply=null;
+      let lastErr="";
+
+      for(const model of MODELS){
+        const {res,data}=await callGemini(model);
+        if(res.status===404){lastErr=`Model ${model} not found`;continue;} // try next
+        if(res.status===401||res.status===403){throw new Error("API key invalid or missing permission. Get a new key at aistudio.google.com/apikey");}
+        if(res.status===429){throw new Error("Rate limit exceeded — wait 60 seconds and try again.");}
+        if(!res.ok){lastErr=`HTTP ${res.status}`;continue;}
+        reply=data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if(reply) break; // success — stop trying
+      }
+
+      if(!reply) throw new Error(lastErr||"No available Gemini model found. Please get a fresh API key at aistudio.google.com/apikey");
       setMsgs(p=>[...p,{role:"assistant",content:reply}]);
+
     }catch(e){
       setMsgs(p=>[...p,{role:"assistant",content:`❌ ${e.message}`}]);
     }
