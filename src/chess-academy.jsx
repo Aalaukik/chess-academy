@@ -590,34 +590,44 @@ export default function ChessAcademy({ user = null, onSignOut }) {
 
     // ── Try models in order until one responds ───────────────
     const MODELS = [
-      "gemini-1.5-flash",
-      "gemini-1.5-flash-001",
-      "gemini-1.5-flash-8b",
-      "gemini-pro",
-      "gemini-1.0-pro",
+      "gemini-2.0-flash-lite",      // free tier, fast
+      "gemini-2.0-flash-lite-001",  // stable version
+      "gemini-flash-latest",        // alias for latest flash
+      "gemini-2.5-flash-lite",      // newer lite model
+      "gemini-2.0-flash",           // fallback (may need billing)
     ];
 
     async function callGemini(modelName, retries=2, delayMs=2000){
-      const res=await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`,
-        {
-          method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({
-            systemInstruction:{parts:[{text:systemPrompt}]},
-            contents:newMsgs.map(m=>({
-              role:m.role==="assistant"?"model":"user",
-              parts:[{text:m.content}]
-            })),
-            generationConfig:{maxOutputTokens:400,temperature:0.7},
-          })
-        }
-      );
+      // Prepend system prompt as first message — works with ALL model versions
+      const contents=[
+        {role:"user",   parts:[{text:`[System instructions — follow these throughout our conversation]: ${systemPrompt}`}]},
+        {role:"model",  parts:[{text:"Understood. I'm your chess tutor and will follow those instructions."}]},
+        ...newMsgs.map(m=>({
+          role:m.role==="assistant"?"model":"user",
+          parts:[{text:m.content}]
+        }))
+      ];
+      let res;
+      try{
+        res=await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`,
+          {
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({
+              contents,
+              generationConfig:{maxOutputTokens:400,temperature:0.7},
+            })
+          }
+        );
+      }catch(networkErr){
+        throw new Error("Network error — check your internet connection.");
+      }
       if(res.status===429&&retries>0){
         await new Promise(r=>setTimeout(r,delayMs));
         return callGemini(modelName,retries-1,delayMs*2);
       }
-      return {res, data: res.ok ? await res.json() : null};
+      return {status:res.status, data: res.ok ? await res.json() : null};
     }
 
     try{
@@ -625,13 +635,13 @@ export default function ChessAcademy({ user = null, onSignOut }) {
       let lastErr="";
 
       for(const model of MODELS){
-        const {res,data}=await callGemini(model);
-        if(res.status===404){lastErr=`Model ${model} not found`;continue;} // try next
-        if(res.status===401||res.status===403){throw new Error("API key invalid or missing permission. Get a new key at aistudio.google.com/apikey");}
-        if(res.status===429){throw new Error("Rate limit exceeded — wait 60 seconds and try again.");}
-        if(!res.ok){lastErr=`HTTP ${res.status}`;continue;}
+        const {status,data}=await callGemini(model);
+        if(status===404){lastErr=`Model ${model} not available`;continue;}
+        if(status===401||status===403){throw new Error("API key invalid or missing permission. Get a new key at aistudio.google.com/apikey");}
+        if(status===429){throw new Error("Rate limit exceeded — wait 60 seconds and try again.");}
+        if(status!==200||!data){lastErr=`HTTP ${status}`;continue;}
         reply=data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if(reply) break; // success — stop trying
+        if(reply) break;
       }
 
       if(!reply) throw new Error(lastErr||"No available Gemini model found. Please get a fresh API key at aistudio.google.com/apikey");
