@@ -588,7 +588,8 @@ export default function ChessAcademy({ user = null, onSignOut }) {
       setTutBusy(false);return;
     }
 
-    try{
+    // ── Fetch with auto-retry on 429 ─────────────────────────
+    async function callGemini(retries=3, delayMs=1000){
       const res=await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
         {
@@ -605,20 +606,31 @@ export default function ChessAcademy({ user = null, onSignOut }) {
         }
       );
 
+      // Rate limited — wait and retry automatically
+      if(res.status===429 && retries>0){
+        await new Promise(r=>setTimeout(r,delayMs));
+        return callGemini(retries-1, delayMs*2);
+      }
+
       if(!res.ok){
         const err=await res.json().catch(()=>({}));
         const msg=err?.error?.message??"";
-        if(res.status===400) throw new Error("Invalid request — check your API key format.");
-        if(res.status===403) throw new Error("API key invalid or expired. Get a new one at aistudio.google.com");
-        if(res.status===429) throw new Error("Rate limit hit — wait a moment and try again.");
-        throw new Error(msg||`Error ${res.status}`);
+        if(res.status===400) throw new Error("Invalid request — check your VITE_GEMINI_KEY.");
+        if(res.status===401) throw new Error("API key rejected. Check VITE_GEMINI_KEY in your .env file.");
+        if(res.status===403) throw new Error("API key doesn't have permission. Enable 'Generative Language API' at console.cloud.google.com/apis/library");
+        if(res.status===429) throw new Error("Rate limit exceeded. Please wait 60 seconds and try again.");
+        if(res.status===404) throw new Error("Model not found. Check your VITE_GEMINI_KEY is valid.");
+        throw new Error(msg||`HTTP error ${res.status}`);
       }
 
-      const data=await res.json();
-      const reply=data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if(!reply) throw new Error("Empty response from AI.");
-      setMsgs(p=>[...p,{role:"assistant",content:reply}]);
+      return res.json();
+    }
 
+    try{
+      const data=await callGemini();
+      const reply=data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if(!reply) throw new Error("Empty response — please try again.");
+      setMsgs(p=>[...p,{role:"assistant",content:reply}]);
     }catch(e){
       setMsgs(p=>[...p,{role:"assistant",content:`❌ ${e.message}`}]);
     }
