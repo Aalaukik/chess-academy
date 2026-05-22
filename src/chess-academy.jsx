@@ -575,7 +575,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   async function sendMsg(){
     const q=tutIn.trim(); if(!q) return;
 
-    // ── 3s cooldown to avoid burning quota on fast clicks ────
+    // ── 3s cooldown ──────────────────────────────────────────
     const now=Date.now();
     if(now-lastMsgTime.current<3000){
       setMsgs(p=>[...p,{role:"assistant",content:"⏳ Please wait a moment before sending another message."}]);
@@ -591,65 +591,68 @@ export default function ChessAcademy({ user = null, onSignOut }) {
              :screen==="puzzles"&&pz?`Current puzzle type: "${pz.cat}". `:"";
     const systemPrompt=`You are an encouraging, expert chess tutor for Chess Academy. ${ctx}Current position FEN: ${fen}. Recent moves: ${mvs}. Be warm, concise (2-4 sentences), use algebraic notation when helpful, give concrete actionable advice. Use chess emojis occasionally.`;
 
-    // ── Cache hit — free answer, no API call ─────────────────
+    // ── Cache hit — no API call needed ───────────────────────
     const cacheKey=`${q}|${fen.slice(0,20)}`;
     if(tutorCache.current[cacheKey]){
       setMsgs(p=>[...p,{role:"user",content:q},{role:"assistant",content:tutorCache.current[cacheKey]}]);
       setTutIn(""); return;
     }
 
-    // ── API key check ────────────────────────────────────────
-    const apiKey=import.meta.env.VITE_GEMINI_KEY;
+    // ── Key check ────────────────────────────────────────────
+    const apiKey=import.meta.env.VITE_OPENROUTER_KEY;
     if(!apiKey){
-      setMsgs(p=>[...p,{role:"assistant",content:"⚠️ Tutor not configured. Add VITE_GEMINI_KEY to Vercel → Settings → Environment Variables, then Redeploy."}]);
+      setMsgs(p=>[...p,{role:"assistant",content:"⚠️ Tutor not configured. Add VITE_OPENROUTER_KEY to Vercel → Settings → Environment Variables. Get a free key at openrouter.ai/keys"}]);
       return;
     }
 
     const newMsgs=[...msgs,{role:"user",content:q}];
     setMsgs(newMsgs); setTutIn(""); setTutBusy(true);
 
-    // ── Model list — tries in order until one works ──────────
+    // ── Free models to try in order ──────────────────────────
     const MODELS=[
-      "gemini-2.0-flash-lite",
-      "gemini-2.0-flash-lite-001",
-      "gemini-flash-latest",
-      "gemini-2.5-flash-lite",
-      "gemini-2.0-flash",
+      "meta-llama/llama-3.1-8b-instruct:free",
+      "mistralai/mistral-7b-instruct:free",
+      "google/gemma-2-9b-it:free",
+      "microsoft/phi-3-mini-128k-instruct:free",
     ];
 
-    async function callGemini(modelName,retries=1,delayMs=5000){
-      const contents=[
-        {role:"user",  parts:[{text:`[Instructions]: ${systemPrompt}`}]},
-        {role:"model", parts:[{text:"Understood, I'm your chess tutor."}]},
-        ...newMsgs.map(m=>({role:m.role==="assistant"?"model":"user",parts:[{text:m.content}]}))
-      ];
-      let res;
-      try{
-        res=await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`,
-          {method:"POST",headers:{"Content-Type":"application/json"},
-           body:JSON.stringify({contents,generationConfig:{maxOutputTokens:400,temperature:0.7}})}
-        );
-      }catch{ throw new Error("Network error — check your internet connection."); }
-      if(res.status===429&&retries>0){
-        await new Promise(r=>setTimeout(r,delayMs));
-        return callGemini(modelName,retries-1,delayMs*2);
-      }
+    async function callOpenRouter(model){
+      const res=await fetch("https://openrouter.ai/api/v1/chat/completions",{
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json",
+          "Authorization":`Bearer ${apiKey}`,
+          "HTTP-Referer": window.location.origin,
+          "X-Title":"Chess Academy",
+        },
+        body:JSON.stringify({
+          model,
+          messages:[
+            {role:"system", content:systemPrompt},
+            ...newMsgs.map(m=>({role:m.role==="assistant"?"assistant":"user",content:m.content}))
+          ],
+          max_tokens:400,
+          temperature:0.7,
+        })
+      });
       return {status:res.status, data:res.ok?await res.json():null};
     }
 
     try{
       let reply=null; let lastErr="";
       for(const model of MODELS){
-        const {status,data}=await callGemini(model);
-        if(status===404){lastErr=`Model ${model} not available`;continue;}
-        if(status===429){throw new Error("Daily quota exceeded. Get a fresh key: aistudio.google.com/apikey → Create API key in new project");}
-        if(status===401||status===403){throw new Error("API key invalid. Update VITE_GEMINI_KEY in Vercel → Settings → Environment Variables.");}
+        let result;
+        try{ result=await callOpenRouter(model); }
+        catch{ lastErr="Network error"; continue; }
+        const {status,data}=result;
+        if(status===429){throw new Error("Rate limit hit — wait 30 seconds and try again.");}
+        if(status===401){throw new Error("Invalid API key. Check VITE_OPENROUTER_KEY in Vercel environment variables.");}
+        if(status===402){throw new Error("OpenRouter credit issue. Check your account at openrouter.ai");}
         if(status!==200||!data){lastErr=`HTTP ${status}`;continue;}
-        reply=data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        reply=data?.choices?.[0]?.message?.content;
         if(reply) break;
       }
-      if(!reply) throw new Error(lastErr||"All models unavailable. Get a fresh key at aistudio.google.com/apikey → Create in new project");
+      if(!reply) throw new Error(lastErr||"All models unavailable — try again in a moment.");
       tutorCache.current[cacheKey]=reply;
       setMsgs(p=>[...p,{role:"assistant",content:reply}]);
     }catch(e){
