@@ -570,17 +570,41 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   //  TUTOR
   // ════════════════════════════════════════════════════════════════
   const lastMsgTime = useRef(0);
+  const tutorCache  = useRef({});   // cache identical questions → reuse answers
 
   async function sendMsg(){
     const q=tutIn.trim();if(!q) return;
 
-    // ── Prevent spamming — enforce 3s cooldown between messages
+    // ── 3-second cooldown between messages
     const now=Date.now();
     if(now - lastMsgTime.current < 3000){
       setMsgs(p=>[...p,{role:"assistant",content:"⏳ Please wait a moment before sending another message."}]);
       return;
     }
     lastMsgTime.current=now;
+
+    const g=screen==="puzzles"?pzRef.current:screen==="learn"?lgRef.current:gRef.current;
+    const fen=g?.fen()??"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    const mvs=g?.history().slice(-8).join(" ")||"none";
+    const ctx=screen==="learn"?`Current lesson: "${curLesson?.title}". `
+             :screen==="puzzles"&&pz?`Current puzzle type: "${pz.cat}". `:"";
+    const systemPrompt=`You are an encouraging, expert chess tutor for Chess Academy. ${ctx}Current position FEN: ${fen}. Recent moves: ${mvs}. Be warm, concise (2-4 sentences), use algebraic notation when helpful, and give concrete actionable advice. Use chess emojis occasionally.`;
+
+    // ── Cache hit — return instantly without API call
+    const cacheKey=`${q}|${fen.slice(0,20)}`;
+    if(tutorCache.current[cacheKey]){
+      const newMsgs=[...msgs,{role:"user",content:q},{role:"assistant",content:tutorCache.current[cacheKey]}];
+      setMsgs(newMsgs);setTutIn("");return;
+    }
+
+    const newMsgs=[...msgs,{role:"user",content:q}];
+    setMsgs(newMsgs);setTutIn("");setTutBusy(true);
+
+    const apiKey=import.meta.env.VITE_GEMINI_KEY;
+    if(!apiKey){
+      setMsgs(p=>[...p,{role:"assistant",content:"⚠️ Tutor not configured. Add VITE_GEMINI_KEY to your Vercel environment variables."}]);
+      setTutBusy(false);return;
+    }
     const g=screen==="puzzles"?pzRef.current:screen==="learn"?lgRef.current:gRef.current;
     const fen=g?.fen()??"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     const mvs=g?.history().slice(-8).join(" ")||"none";
@@ -654,7 +678,8 @@ export default function ChessAcademy({ user = null, onSignOut }) {
         if(reply) break;
       }
 
-      if(!reply) throw new Error(lastErr||"No available Gemini model found. Please get a fresh API key at aistudio.google.com/apikey");
+      if(!reply) throw new Error(lastErr||"Quota exhausted. Get a fresh API key at aistudio.google.com/apikey → Create in new project");
+      tutorCache.current[cacheKey]=reply; // cache for this session — saves quota
       setMsgs(p=>[...p,{role:"assistant",content:reply}]);
 
     }catch(e){
