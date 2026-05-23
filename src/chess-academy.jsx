@@ -591,39 +591,37 @@ export default function ChessAcademy({ user = null, onSignOut }) {
              :screen==="puzzles"&&pz?`Current puzzle type: "${pz.cat}". `:"";
     const systemPrompt=`You are an encouraging, expert chess tutor for Chess Academy. ${ctx}Current position FEN: ${fen}. Recent moves: ${mvs}. Be warm, concise (2-4 sentences), use algebraic notation when helpful, give concrete actionable advice. Use chess emojis occasionally.`;
 
-    // ── Cache hit — no API call needed ───────────────────────
+    // ── Cache hit ─────────────────────────────────────────────
     const cacheKey=`${q}|${fen.slice(0,20)}`;
     if(tutorCache.current[cacheKey]){
       setMsgs(p=>[...p,{role:"user",content:q},{role:"assistant",content:tutorCache.current[cacheKey]}]);
       setTutIn(""); return;
     }
 
-    // ── Key check ────────────────────────────────────────────
-    const apiKey=import.meta.env.VITE_OPENROUTER_KEY;
+    // ── Key check ─────────────────────────────────────────────
+    const apiKey=import.meta.env.VITE_GROQ_KEY;
     if(!apiKey){
-      setMsgs(p=>[...p,{role:"assistant",content:"⚠️ Tutor not configured. Add VITE_OPENROUTER_KEY to Vercel → Settings → Environment Variables. Get a free key at openrouter.ai/keys"}]);
+      setMsgs(p=>[...p,{role:"assistant",content:"⚠️ Tutor not configured. Add VITE_GROQ_KEY to Vercel → Settings → Environment Variables. Get a free key at console.groq.com"}]);
       return;
     }
 
     const newMsgs=[...msgs,{role:"user",content:q}];
     setMsgs(newMsgs); setTutIn(""); setTutBusy(true);
 
-    // ── Free models to try in order ──────────────────────────
+    // ── Groq free models — try in order ───────────────────────
     const MODELS=[
-      "meta-llama/llama-3.1-8b-instruct:free",
-      "mistralai/mistral-7b-instruct:free",
-      "google/gemma-2-9b-it:free",
-      "microsoft/phi-3-mini-128k-instruct:free",
+      "llama-3.1-8b-instant",   // fastest, free
+      "llama3-8b-8192",         // stable free model
+      "gemma2-9b-it",           // Google Gemma via Groq
+      "mixtral-8x7b-32768",     // Mixtral fallback
     ];
 
-    async function callOpenRouter(model){
-      const res=await fetch("https://openrouter.ai/api/v1/chat/completions",{
+    async function callGroq(model){
+      const res=await fetch("https://api.groq.com/openai/v1/chat/completions",{
         method:"POST",
         headers:{
           "Content-Type":"application/json",
           "Authorization":`Bearer ${apiKey}`,
-          "HTTP-Referer": window.location.origin,
-          "X-Title":"Chess Academy",
         },
         body:JSON.stringify({
           model,
@@ -635,20 +633,20 @@ export default function ChessAcademy({ user = null, onSignOut }) {
           temperature:0.7,
         })
       });
-      return {status:res.status, data:res.ok?await res.json():null};
+      return {status:res.status, data:res.ok?await res.json():await res.json()};
     }
 
     try{
       let reply=null; let lastErr="";
       for(const model of MODELS){
         let result;
-        try{ result=await callOpenRouter(model); }
+        try{ result=await callGroq(model); }
         catch{ lastErr="Network error"; continue; }
         const {status,data}=result;
-        if(status===429){throw new Error("Rate limit hit — wait 30 seconds and try again.");}
-        if(status===401){throw new Error("Invalid API key. Check VITE_OPENROUTER_KEY in Vercel environment variables.");}
-        if(status===402){throw new Error("OpenRouter credit issue. Check your account at openrouter.ai");}
-        if(status!==200||!data){lastErr=`HTTP ${status}`;continue;}
+        if(status===401){throw new Error("Invalid API key. Check VITE_GROQ_KEY in Vercel → Settings → Environment Variables.");}
+        if(status===429){throw new Error("Rate limit hit — wait 30 seconds and try again. (Free: 30 req/min, 14,400/day)");}
+        if(status===503||status===500){lastErr=`Model ${model} unavailable`;continue;}
+        if(status!==200){lastErr=data?.error?.message||`HTTP ${status}`;continue;}
         reply=data?.choices?.[0]?.message?.content;
         if(reply) break;
       }
