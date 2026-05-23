@@ -121,22 +121,22 @@ function detectOpening(hist){
 }
 
 const LESSONS=[
-  {id:0,track:"beginner",icon:"♟",title:"The Chessboard",fen:"8/8/8/8/8/8/8/8 w - - 0 1",
+  {id:0,track:"beginner",icon:"♟",title:"The Chessboard",fen:"4k3/8/8/8/8/8/8/4K3 w - - 0 1",
    body:"A chessboard has 64 squares in an 8×8 grid. Files (columns) are labeled a–h left to right. Ranks (rows) are numbered 1–8 from White's side upward. The golden rule: 'light on right' — the bottom-right corner must always be a light square.",
    tip:"Squares are named by file + rank, e.g. e4, d5, g7. Every square has a unique name."},
-  {id:1,track:"beginner",icon:"♙",title:"Pawn Power",fen:"8/pppppppp/8/8/8/8/PPPPPPPP/8 w - - 0 1",
+  {id:1,track:"beginner",icon:"♙",title:"Pawn Power",fen:"4k3/pppppppp/8/8/8/8/PPPPPPPP/4K3 w - - 0 1",
    body:"Pawns march forward — one square at a time, or two squares from their starting rank. They capture diagonally forward. A pawn reaching the 8th rank promotes to any piece (almost always a queen!). Pawns cannot retreat, so every pawn move is permanent.",
    tip:"En passant: if an enemy pawn moves two squares past yours on an adjacent file, you can capture it as if it moved only one square — but only immediately!"},
-  {id:2,track:"beginner",icon:"♘",title:"The Knight's Dance",fen:"8/8/8/8/4N3/8/8/8 w - - 0 1",
+  {id:2,track:"beginner",icon:"♘",title:"The Knight's Dance",fen:"4k3/8/8/8/4N3/8/8/4K3 w - - 0 1",
    body:"Knights move in an L-shape — two squares in one direction, one perpendicular. They're the only pieces that jump over others. This makes knights especially deadly in closed positions where other pieces are blocked.",
    tip:"A knight in the center controls up to 8 squares. On the rim it controls only 2–4. 'A knight on the rim is dim!'"},
-  {id:3,track:"beginner",icon:"♗",title:"Bishop Diagonals",fen:"8/8/8/8/4B3/8/8/8 w - - 0 1",
+  {id:3,track:"beginner",icon:"♗",title:"Bishop Diagonals",fen:"4k3/8/8/8/4B3/8/8/4K3 w - - 0 1",
    body:"Bishops slide diagonally any number of squares and stay forever on their starting color. You have one light-squared and one dark-squared bishop. They shine in open positions with long, unobstructed diagonals.",
    tip:"The bishop pair — both bishops working together — is a major strategic advantage, controlling squares of both colors."},
-  {id:4,track:"beginner",icon:"♖",title:"Rooks Rule Open Files",fen:"8/8/8/8/4R3/8/8/8 w - - 0 1",
+  {id:4,track:"beginner",icon:"♖",title:"Rooks Rule Open Files",fen:"4k3/8/8/8/4R3/8/8/4K3 w - - 0 1",
    body:"Rooks slide horizontally or vertically any number of squares. They're most powerful on open files (no pawns blocking) and the 7th rank, where they attack the opponent's unadvanced pawns from behind. Two rooks doubled on a file are devastating.",
    tip:"Place rooks on open files early. Connecting your rooks (castling and clearing the back rank) is a key opening goal."},
-  {id:5,track:"beginner",icon:"♕",title:"Queen Supremacy",fen:"8/8/8/8/4Q3/8/8/8 w - - 0 1",
+  {id:5,track:"beginner",icon:"♕",title:"Queen Supremacy",fen:"4k3/8/8/8/4Q3/8/8/4K3 w - - 0 1",
    body:"The queen combines the rook and bishop — she moves any number of squares in any direction. Worth roughly 9 pawns, she's by far the most powerful piece. Losing her without compensation almost always loses the game.",
    tip:"Don't bring the queen out too early — she can be chased by enemy pieces and you'll lose precious tempo."},
   {id:6,track:"beginner",icon:"♔",title:"Check, Checkmate & Stalemate",fen:"4k3/8/8/8/8/8/4Q3/4K3 w - - 0 1",
@@ -491,7 +491,15 @@ export default function ChessAcademy({ user = null, onSignOut }) {
 
   function loadLesson(lesson){
     if(!loaded||!lesson) return;
-    const g=new ChessLib.current(lesson.fen);
+    // Fallback FEN in case lesson FEN is invalid
+    const safeFen = lesson.fen || "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    let g;
+    try{
+      g=new ChessLib.current(safeFen);
+    }catch(e){
+      console.warn("Invalid lesson FEN, using starting position:", safeFen, e.message);
+      g=new ChessLib.current(); // fallback to starting position
+    }
     lgRef.current=g;setLBoard(g.board());setLSel(null);setLLegal([]);
   }
   useEffect(()=>{if(loaded&&screen==="learn") loadLesson(curLesson);},[loaded,lIdx,lTrack,screen]);
@@ -517,7 +525,13 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   // ════════════════════════════════════════════════════════════════
   function loadPuzzle(puzzle){
     if(!loaded||!puzzle) return;
-    const g=new ChessLib.current(puzzle.fen);
+    let g;
+    try{
+      g=new ChessLib.current(puzzle.fen);
+    }catch(e){
+      console.warn("Invalid puzzle FEN:", puzzle.fen, e.message);
+      return;
+    }
     pzRef.current=g;setPz(puzzle);
     setPzBoard(g.board());setPzSel(null);setPzLegal([]);setPzLastMv(null);
     setPzStatus("idle");setPzMvIdx(0);setPzHint(false);
