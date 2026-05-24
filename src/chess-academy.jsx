@@ -105,6 +105,9 @@ const THEMES={
   jade:    {l:"#FFFFDD",d:"#86A666",sel:"rgba(200,245,60,.85)",hint:"rgba(50,130,20,.50)",last:"rgba(200,245,60,.40)",bdr:"#627A45",name:"Jade"},
   midnight:{l:"#4A4A6A",d:"#1E1A3A",sel:"rgba(155,205,255,.85)",hint:"rgba(100,170,255,.42)",last:"rgba(155,205,255,.32)",bdr:"#2A2460",name:"Midnight"},
   rose:    {l:"#F4DDE0",d:"#C47A85",sel:"rgba(255,230,60,.82)",hint:"rgba(180,50,60,.40)",last:"rgba(255,230,60,.38)",bdr:"#A05065",name:"Rose"},
+  ocean:   {l:"#D6EEF8",d:"#2E7EA8",sel:"rgba(255,236,60,.85)",hint:"rgba(0,160,200,.50)",last:"rgba(255,236,60,.40)",bdr:"#1A5F82",name:"Ocean"},
+  forest:  {l:"#E8F0D8",d:"#4A7C3F",sel:"rgba(255,240,60,.85)",hint:"rgba(30,100,20,.52)",last:"rgba(255,240,60,.38)",bdr:"#2D5A24",name:"Forest"},
+  glass:   {l:"rgba(220,230,245,.75)",d:"rgba(80,100,140,.70)",sel:"rgba(255,220,60,.88)",hint:"rgba(60,100,200,.45)",last:"rgba(255,220,60,.40)",bdr:"rgba(100,130,180,.60)",name:"Glass"},
 };
 
 const OPENINGS={
@@ -475,6 +478,32 @@ export default function ChessAcademy({ user = null, onSignOut }) {
     return()=>clearInterval(timerRef.current);
   },[timerOn,useTimer]);
 
+  // ── Keyboard shortcuts
+  useEffect(()=>{
+    function onKey(e){
+      // Don't fire when typing in an input
+      if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA") return;
+      if(screen==="play"){
+        if(e.key==="u"||e.key==="U") undoMove();
+        if(e.key==="h"||e.key==="H") showHint();
+        if(e.key==="f"||e.key==="F") setFlipped(f=>!f);
+        if(e.key==="n"||e.key==="N") startGame();
+      }
+      if(screen==="learn"){
+        if(e.key==="ArrowRight") setLIdx(i=>Math.min(trackLessons.length-1,i+1));
+        if(e.key==="ArrowLeft")  setLIdx(i=>Math.max(0,i-1));
+        if(e.key==="r"||e.key==="R") loadLesson(curLesson);
+      }
+      if(screen==="puzzles"){
+        if(e.key==="n"||e.key==="N") randomPuzzle();
+        if(e.key==="h"||e.key==="H") setPzHint(true);
+      }
+      if(e.key==="Escape") setScreen("menu");
+    }
+    window.addEventListener("keydown",onKey);
+    return()=>window.removeEventListener("keydown",onKey);
+  },[screen,hist,lIdx,pz,curLesson]);
+
   // ── Scroll move list
   useEffect(()=>{moveListRef.current?.lastElementChild?.scrollIntoView({behavior:"smooth"});},[hist]);
 
@@ -680,8 +709,18 @@ export default function ChessAcademy({ user = null, onSignOut }) {
     const t=THEMES[theme];
     const fl=flipped&&!noFlip;
     const rows=fl?[...brd].reverse():brd;
+    const isPlayBoard=!noFlip;
+    const isMyTurnNow=gRef.current?.turn()===pCol;
     return(
-      <div style={{display:"inline-flex",flexDirection:"column",borderRadius:6,overflow:"hidden",boxShadow:"0 20px 60px rgba(0,0,0,.55),0 3px 10px rgba(0,0,0,.4)",border:`2px solid ${t.bdr}`,boxSizing:"border-box"}}>
+      <div style={{display:"inline-flex",flexDirection:"column",borderRadius:6,overflow:"hidden",
+        boxShadow:"0 20px 60px rgba(0,0,0,.55),0 3px 10px rgba(0,0,0,.4)",
+        border:`2px solid ${t.bdr}`,
+        outline: isPlayBoard && gStatus==="playing"
+          ? isMyTurnNow ? "3px solid #534AB7" : "3px solid rgba(83,74,183,0.22)"
+          : "3px solid transparent",
+        outlineOffset:"2px",
+        transition:"outline-color .4s ease",
+        boxSizing:"border-box"}}>
         {rows.map((rowData,ri)=>{
           const bRow=fl?7-ri:ri;const rank=8-bRow;
           const dispRow=fl?[...rowData].reverse():rowData;
@@ -701,11 +740,20 @@ export default function ChessAcademy({ user = null, onSignOut }) {
                 let bg=isLight?t.l:t.d;
                 if(isSel) bg=t.sel;else if(isLF||isLT) bg=t.last;
                 if(isChk) bg="rgba(220,60,40,.72)";
+                const isJustMoved = isLT;
                 return(
-                  <div key={ci} onClick={()=>onSq(sq)} style={{width:sz,height:sz,background:bg,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",position:"relative",transition:"background .10s",outline:isSel?"2.5px solid rgba(255,255,0,.95)":isHint?"2.5px solid rgba(80,200,80,.95)":"none",outlineOffset:"-2.5px",boxSizing:"border-box"}}>
-                    {isLeg&&!piece&&<div style={{width:Math.round(sz*.32),height:Math.round(sz*.32),borderRadius:"50%",background:t.hint,pointerEvents:"none"}}/>}
+                  <div key={ci} onClick={()=>onSq(sq)}
+                    className="board-sq"
+                    style={{width:sz,height:sz,background:bg,cursor:"pointer",
+                      display:"flex",alignItems:"center",justifyContent:"center",
+                      position:"relative",transition:"background .08s",
+                      outline:isSel?"2.5px solid rgba(255,255,0,.95)":isHint?"2.5px solid rgba(80,200,80,.95)":"none",
+                      outlineOffset:"-2.5px",boxSizing:"border-box",
+                      animation:isJustMoved?"sqFlash .45s ease-out":"none",
+                    }}>
+                    {isLeg&&!piece&&<div style={{width:Math.round(sz*.34),height:Math.round(sz*.34),borderRadius:"50%",background:t.hint,pointerEvents:"none",animation:"hintAppear .18s ease-out"}}/>}
                     {isLeg&&piece&&<div style={{position:"absolute",inset:0,boxShadow:`inset 0 0 0 4px ${t.hint}`,pointerEvents:"none",borderRadius:2}}/>}
-                    {piece&&<span style={{fontSize:Math.round(sz*.70),lineHeight:1,userSelect:"none",pointerEvents:"none",color:isW?"#fff":"#0A0808",textShadow:isW?"0 0 4px #000,0 1px 6px rgba(0,0,0,.95)":"0 0 2px rgba(255,255,255,.2),0 1px 4px rgba(0,0,0,.4)",position:"relative",zIndex:1}}>{UNI[pk]}</span>}
+                    {piece&&<span className="chess-piece" style={{fontSize:Math.round(sz*.82),lineHeight:1,userSelect:"none",pointerEvents:"none",color:isW?"#fff":"#0A0808",textShadow:isW?"0 0 6px #000,0 2px 8px rgba(0,0,0,.95),0 0 2px #222":"0 0 3px rgba(255,255,255,.25),0 1px 5px rgba(0,0,0,.5)",position:"relative",zIndex:1}}>{UNI[pk]}</span>}
                   </div>
                 );
               })}
@@ -738,7 +786,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
         <div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column",gap:8,paddingRight:4,paddingBottom:4}}>
           {msgs.length===0&&<p style={{fontSize:13,color:"var(--color-text-secondary)",fontStyle:"italic",margin:0}}>Ask anything about chess or the current position!</p>}
           {msgs.map((m,i)=>(
-            <div key={i} style={{maxWidth:"90%",alignSelf:m.role==="user"?"flex-end":"flex-start"}}>
+            <div key={i} className={m.role==="user"?"msg-in-right":"msg-in-left"} style={{maxWidth:"90%",alignSelf:m.role==="user"?"flex-end":"flex-start"}}>
               <div style={{fontSize:13,lineHeight:1.6,padding:"8px 12px",borderRadius:m.role==="user"?"16px 16px 4px 16px":"16px 16px 16px 4px",background:m.role==="user"?"#4A43A0":"var(--color-background-secondary)",color:m.role==="user"?"#fff":"var(--color-text-primary)",boxShadow:"0 1px 3px rgba(0,0,0,.12)"}}>
                 {m.content}
               </div>
@@ -835,7 +883,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
     const totalL=LESSONS.length;
     const pct=Math.round((doneLessons.size/totalL)*100);
     return(
-      <div style={{padding:"1rem 0 2rem",fontFamily:"var(--font-sans)"}}>
+      <div style={{padding:"1rem 0 2rem",fontFamily:"var(--font-sans)"}} className="screen-enter">
         <style>{`@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}`}</style>
         {/* Profile button top-right */}
         <div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}>
@@ -893,10 +941,10 @@ export default function ChessAcademy({ user = null, onSignOut }) {
             <div style={{fontSize:13,fontWeight:500,color:"var(--color-text-primary)"}}>Board Theme</div>
             <button onClick={()=>setScreen("settings")} style={{fontSize:12,padding:"4px 10px",background:"none",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",cursor:"pointer",color:"var(--color-text-secondary)"}}>⚙ Settings</button>
           </div>
-          <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
+          <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
             {Object.entries(THEMES).map(([k,t])=>(
               <div key={k} onClick={()=>setTheme(k)} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:6,cursor:"pointer"}}>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",width:34,height:34,borderRadius:6,overflow:"hidden",outline:theme===k?"3px solid #4A43A0":"2px solid transparent",outlineOffset:2,transition:"outline .15s"}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",width:34,height:34,borderRadius:6,overflow:"hidden",outline:theme===k?"3px solid #4A43A0":"2px solid transparent",outlineOffset:2,transition:"outline .15s, transform .15s",transform:theme===k?"scale(1.1)":"scale(1)"}}>
                   {[t.l,t.d,t.d,t.l].map((c,i)=><div key={i} style={{background:c}}/>)}
                 </div>
                 <span style={{fontSize:11,fontWeight:theme===k?600:400,color:theme===k?"#4A43A0":"var(--color-text-secondary)"}}>{t.name}</span>
@@ -1066,7 +1114,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
               <div style={{width:8,height:SQ*8+(showCoords?22:0),background:"var(--color-border-tertiary)",borderRadius:4,overflow:"hidden",flexShrink:0,display:"flex",flexDirection:"column-reverse"}}>
                 <div style={{height:`${evalBar}%`,background:"#fff",transition:"height .7s ease",borderRadius:4}}/>
               </div>
-              <Board brd={board} onSq={handleSqClick} selSq={sel} legalSqs={legal} lastMove={lastMv} chkSq={chkSq} hintSq2={hintSq}/>
+              <Board brd={board} onSq={handleSqClick} selSq={sel} legalSqs={legal} lastMove={lastMv} chkSq={chkSq} hintSq2={hintSq} showGlow={true} myTurn={isMyTurn}/>
             </div>
             {/* Player */}
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:5,minHeight:26}}>
@@ -1108,6 +1156,15 @@ export default function ChessAcademy({ user = null, onSignOut }) {
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginTop:6}}>
               <button onClick={startGame} style={{padding:"8px 0",fontSize:12,background:"none",border:"0.5px solid var(--color-border-secondary)",borderRadius:"var(--border-radius-md)",cursor:"pointer",color:"var(--color-text-secondary)"}}>↺ New Game</button>
               <button onClick={()=>setScreen("play_setup")} style={{padding:"8px 0",fontSize:12,background:"none",border:"0.5px solid var(--color-border-secondary)",borderRadius:"var(--border-radius-md)",cursor:"pointer",color:"var(--color-text-secondary)"}}>⚙ Setup</button>
+            </div>
+            {/* Keyboard shortcuts */}
+            <div style={{marginTop:10,padding:"8px 10px",background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",display:"flex",flexWrap:"wrap",gap:"6px 12px"}}>
+              {[["U","Undo"],["H","Hint"],["F","Flip"],["N","New"],["Esc","Menu"]].map(([k,label])=>(
+                <div key={k} style={{display:"flex",alignItems:"center",gap:4}}>
+                  <span className="kbd">{k}</span>
+                  <span style={{fontSize:11,color:"var(--color-text-tertiary)"}}>{label}</span>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -1228,6 +1285,14 @@ export default function ChessAcademy({ user = null, onSignOut }) {
             <button onClick={()=>setLIdx(i=>Math.max(0,i-1))} disabled={lIdx===0} style={{padding:"5px 13px",fontSize:14,background:"none",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",cursor:lIdx===0?"default":"pointer",color:"var(--color-text-secondary)",opacity:lIdx===0?0.3:1}}>←</button>
             <span style={{flex:1,textAlign:"center",fontSize:12,color:"var(--color-text-secondary)"}}>Lesson {lIdx+1} of {trackLessons.length}</span>
             <button onClick={()=>setLIdx(i=>Math.min(trackLessons.length-1,i+1))} disabled={lIdx>=trackLessons.length-1} style={{padding:"5px 13px",fontSize:14,background:"none",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",cursor:lIdx>=trackLessons.length-1?"default":"pointer",color:"var(--color-text-secondary)",opacity:lIdx>=trackLessons.length-1?0.3:1}}>→</button>
+          </div>
+          <div style={{display:"flex",gap:"6px 12px",flexWrap:"wrap",padding:"5px 0"}}>
+            {[["←→","Navigate"],["R","Reset board"],["Esc","Menu"]].map(([k,label])=>(
+              <div key={k} style={{display:"flex",alignItems:"center",gap:4}}>
+                <span className="kbd">{k}</span>
+                <span style={{fontSize:11,color:"var(--color-text-tertiary)"}}>{label}</span>
+              </div>
+            ))}
           </div>
           {/* Lesson card */}
           <div style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-lg)",padding:"1rem 1.25rem"}}>
