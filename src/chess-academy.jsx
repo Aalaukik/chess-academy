@@ -478,32 +478,6 @@ export default function ChessAcademy({ user = null, onSignOut }) {
     return()=>clearInterval(timerRef.current);
   },[timerOn,useTimer]);
 
-  // ── Keyboard shortcuts
-  useEffect(()=>{
-    function onKey(e){
-      // Don't fire when typing in an input
-      if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA") return;
-      if(screen==="play"){
-        if(e.key==="u"||e.key==="U") undoMove();
-        if(e.key==="h"||e.key==="H") showHint();
-        if(e.key==="f"||e.key==="F") setFlipped(f=>!f);
-        if(e.key==="n"||e.key==="N") startGame();
-      }
-      if(screen==="learn"){
-        if(e.key==="ArrowRight") setLIdx(i=>Math.min(trackLessons.length-1,i+1));
-        if(e.key==="ArrowLeft")  setLIdx(i=>Math.max(0,i-1));
-        if(e.key==="r"||e.key==="R") loadLesson(curLesson);
-      }
-      if(screen==="puzzles"){
-        if(e.key==="n"||e.key==="N") randomPuzzle();
-        if(e.key==="h"||e.key==="H") setPzHint(true);
-      }
-      if(e.key==="Escape") setScreen("menu");
-    }
-    window.addEventListener("keydown",onKey);
-    return()=>window.removeEventListener("keydown",onKey);
-  },[screen,hist,lIdx,pz,curLesson]);
-
   // ── Scroll move list
   useEffect(()=>{moveListRef.current?.lastElementChild?.scrollIntoView({behavior:"smooth"});},[hist]);
 
@@ -513,7 +487,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   function fmtTime(s){const m=Math.floor(s/60);return `${m}:${(s%60).toString().padStart(2,"0")}`;}
 
   // ════════════════════════════════════════════════════════════════
-  //  LEARN LOGIC
+  //  LEARN LOGIC — declared early so keyboard hook can use these
   // ════════════════════════════════════════════════════════════════
   const trackLessons=LESSONS.filter(l=>l.track===lTrack);
   const curLesson=trackLessons[lIdx]??LESSONS[0];
@@ -572,6 +546,31 @@ export default function ChessAcademy({ user = null, onSignOut }) {
     const src=unsolved.length?unsolved:pool;
     loadPuzzle(src[Math.floor(Math.random()*src.length)]);
   }
+
+  // ── Keyboard shortcuts (placed after all referenced functions are defined)
+  useEffect(()=>{
+    function onKey(e){
+      if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA") return;
+      if(screen==="play"){
+        if(e.key==="u"||e.key==="U") undoMove();
+        if(e.key==="h"||e.key==="H") showHint();
+        if(e.key==="f"||e.key==="F") setFlipped(f=>!f);
+        if(e.key==="n"||e.key==="N") startGame();
+      }
+      if(screen==="learn"){
+        if(e.key==="ArrowRight") setLIdx(i=>Math.min(trackLessons.length-1,i+1));
+        if(e.key==="ArrowLeft")  setLIdx(i=>Math.max(0,i-1));
+        if(e.key==="r"||e.key==="R") loadLesson(curLesson);
+      }
+      if(screen==="puzzles"){
+        if(e.key==="n"||e.key==="N") randomPuzzle();
+        if(e.key==="h"||e.key==="H") setPzHint(true);
+      }
+      if(e.key==="Escape") setScreen("menu");
+    }
+    window.addEventListener("keydown",onKey);
+    return()=>window.removeEventListener("keydown",onKey);
+  },[screen,hist,lIdx,lTrack,pz]);
 
   function handlePzClick(sq){
     const g=pzRef.current;
