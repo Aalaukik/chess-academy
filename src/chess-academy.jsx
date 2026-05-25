@@ -210,8 +210,10 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   const [loaded,setLoaded]=useState(false);
   const [loadErr,setLoadErr]=useState(false);
 
-  // ── game
-  const gRef=useRef(null);
+  // ── Move quality badges
+  const preMoveEval = useRef(0);       // eval BEFORE player's move
+  const [moveQualities, setMoveQualities] = useState([]); // one entry per half-move
+  const [lastBadge, setLastBadge] = useState(null); // badge shown on board after move
   const [board,setBoard]=useState([]);
   const [sel,setSel]=useState(null);
   const [legal,setLegal]=useState([]);
@@ -337,7 +339,20 @@ export default function ChessAcademy({ user = null, onSignOut }) {
     else setGStatus("playing");
   }
 
-  function startGame(){
+  // ── Classify a move by eval delta (from the moving player's perspective)
+  function classifyMove(evalBefore, evalAfter, playerColor){
+    // Convert to "from mover's POV" — positive = good for mover
+    const sign = playerColor === "w" ? 1 : -1;
+    const before = evalBefore * sign;
+    const after  = evalAfter  * sign;
+    const delta  = after - before; // negative = move lost centipawns
+
+    if(delta >= 0)        return { label:"Best",        sym:"!",   color:"#5CB88A", bg:"rgba(92,184,138,.15)"  };
+    if(delta >= -15)      return { label:"Good",        sym:"✓",   color:"#5CB88A", bg:"rgba(92,184,138,.12)"  };
+    if(delta >= -50)      return { label:"Inaccuracy",  sym:"?",   color:"#F5C842", bg:"rgba(245,200,66,.15)"  };
+    if(delta >= -150)     return { label:"Mistake",     sym:"??",  color:"#F08C4A", bg:"rgba(240,140,74,.15)"  };
+    return                       { label:"Blunder",     sym:"???", color:"#E85555", bg:"rgba(232,85,85,.15)"   };
+  }
     if(!loaded) return;
     clearInterval(timerRef.current);
     const g=new ChessLib.current();
@@ -346,6 +361,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
     setBoard(g.board());
     setGStatus("playing");setWinner(null);setHist([]);setSel(null);setLegal([]);
     setLastMv(null);setInChk(false);setEvalBar(50);setHintSq(null);setAiThink(false);setOpening("");
+    setMoveQualities([]); setLastBadge(null); preMoveEval.current=0;
     setTimeW(timeCtrl);setTimeB(timeCtrl);
     setFlipped(pCol==="b");
     setMsgs([{role:"assistant",content:`Let's play! I'm set to ${DIFFS[diff].label} difficulty ♟ Ask me anything about chess, moves, or strategy!`}]);
@@ -382,9 +398,23 @@ export default function ChessAcademy({ user = null, onSignOut }) {
     if(sel&&legal.includes(sq)){
       const piece=g.get(sel);
       const isPromo=piece?.type==="p"&&((pCol==="w"&&sq[1]==="8")||(pCol==="b"&&sq[1]==="1"));
-      if(isPromo){setPromoDialog({from:sel,to:sq});return;}
+      if(isPromo){
+        // Capture eval before promotion move
+        preMoveEval.current = evalPos(g);
+        setPromoDialog({from:sel,to:sq});
+        return;
+      }
+      // Capture eval BEFORE the move
+      const evalBefore = evalPos(g);
       const r=g.move({from:sel,to:sq,promotion:"q"});
       if(r){
+        // Classify immediately after move
+        const evalAfter = evalPos(g);
+        const badge = classifyMove(evalBefore, evalAfter, pCol);
+        setMoveQualities(q=>[...q, badge]);
+        setLastBadge(badge);
+        setTimeout(()=>setLastBadge(null), 2200);
+
         setLastMv({from:r.from,to:r.to});setSel(null);setLegal([]);setHintSq(null);
         if(r.captured) play("capture");
         else if(r.flags.includes("k")||r.flags.includes("q")) play("castle");
@@ -404,9 +434,15 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   function doPromotion(pt){
     if(!promoDialog) return;
     const g=gRef.current;
+    const evalBefore = preMoveEval.current || evalPos(g);
     const r=g.move({from:promoDialog.from,to:promoDialog.to,promotion:pt});
     setPromoDialog(null);
     if(r){
+      const evalAfter = evalPos(g);
+      const badge = classifyMove(evalBefore, evalAfter, pCol);
+      setMoveQualities(q=>[...q, badge]);
+      setLastBadge(badge);
+      setTimeout(()=>setLastBadge(null), 2200);
       setLastMv({from:r.from,to:r.to});setSel(null);setLegal([]);
       play("move");if(g.inCheck()) play("check");
       syncGame(g);
@@ -1096,6 +1132,25 @@ export default function ChessAcademy({ user = null, onSignOut }) {
             <button onClick={startGame} style={{padding:"7px 16px",background:"#4A43A0",color:"#fff",border:"none",borderRadius:"var(--border-radius-md)",fontSize:13,fontWeight:500,cursor:"pointer"}}>Rematch</button>
           </div>
         )}
+        {/* Move quality summary — shown after game ends */}
+        {gameOver && moveQualities.length>0 &&(
+          <div style={{marginBottom:12,padding:"10px 14px",borderRadius:"var(--border-radius-md)",background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)"}}>
+            <div style={{fontSize:12,color:"var(--color-text-secondary)",marginBottom:8,fontWeight:500}}>Your move quality</div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              {[
+                {label:"Best/Good", sym:"✓",  color:"#5CB88A", count: moveQualities.filter(m=>m.label==="Best"||m.label==="Good").length},
+                {label:"Inaccuracy",sym:"?",   color:"#F5C842", count: moveQualities.filter(m=>m.label==="Inaccuracy").length},
+                {label:"Mistake",   sym:"??",  color:"#F08C4A", count: moveQualities.filter(m=>m.label==="Mistake").length},
+                {label:"Blunder",   sym:"???", color:"#E85555", count: moveQualities.filter(m=>m.label==="Blunder").length},
+              ].map(s=>(
+                <div key={s.label} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 10px",borderRadius:20,background:`${s.color}18`,border:`0.5px solid ${s.color}55`}}>
+                  <span style={{fontSize:12,fontWeight:700,color:s.color}}>{s.sym}</span>
+                  <span style={{fontSize:12,color:s.color,fontWeight:500}}>{s.count} {s.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
           {/* Board col */}
           <div style={{flexShrink:0}}>
@@ -1108,12 +1163,26 @@ export default function ChessAcademy({ user = null, onSignOut }) {
               </div>
               {useTimer&&<div style={{fontSize:14,fontFamily:"monospace",fontWeight:700,color:!isMyTurn?"var(--color-text-primary)":"var(--color-text-tertiary)",background:!isMyTurn&&gStatus==="playing"?"rgba(74,67,160,.12)":"transparent",padding:"3px 8px",borderRadius:"var(--border-radius-md)"}}>{fmtTime(pCol==="w"?timeB:timeW)}</div>}
             </div>
-            {/* Eval + board */}
+            {/* Eval + board with floating badge overlay */}
             <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
               <div style={{width:8,height:SQ*8+(showCoords?22:0),background:"var(--color-border-tertiary)",borderRadius:4,overflow:"hidden",flexShrink:0,display:"flex",flexDirection:"column-reverse"}}>
                 <div style={{height:`${evalBar}%`,background:"#fff",transition:"height .7s ease",borderRadius:4}}/>
               </div>
-              <Board brd={board} onSq={handleSqClick} selSq={sel} legalSqs={legal} lastMove={lastMv} chkSq={chkSq} hintSq2={hintSq} showGlow={true} myTurn={isMyTurn}/>
+              <div style={{position:"relative"}}>
+                <Board brd={board} onSq={handleSqClick} selSq={sel} legalSqs={legal} lastMove={lastMv} chkSq={chkSq} hintSq2={hintSq} showGlow={true} myTurn={isMyTurn}/>
+                {lastBadge&&(
+                  <div style={{position:"absolute",top:-14,right:-10,zIndex:10,
+                    background:lastBadge.bg,
+                    border:`1.5px solid ${lastBadge.color}`,
+                    borderRadius:20,padding:"4px 11px",
+                    display:"flex",alignItems:"center",gap:5,
+                    animation:"badgePop .35s cubic-bezier(.34,1.56,.64,1) forwards",
+                    boxShadow:"0 4px 14px rgba(0,0,0,.28)"}}>
+                    <span style={{fontSize:13,fontWeight:700,color:lastBadge.color,letterSpacing:"-.5px"}}>{lastBadge.sym}</span>
+                    <span style={{fontSize:12,fontWeight:600,color:lastBadge.color}}>{lastBadge.label}</span>
+                  </div>
+                )}
+              </div>
             </div>
             {/* Player */}
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:5,minHeight:26}}>
@@ -1136,13 +1205,25 @@ export default function ChessAcademy({ user = null, onSignOut }) {
             {panelTab==="moves"&&(
               <div ref={moveListRef} style={{flex:1,overflowY:"auto",maxHeight:290}}>
                 {movePairs.length===0&&<p style={{fontSize:13,color:"var(--color-text-secondary)",fontStyle:"italic",margin:0}}>Waiting for your first move…</p>}
-                {movePairs.map(p=>(
-                  <div key={p.n} style={{display:"flex",alignItems:"center",borderBottom:"0.5px solid var(--color-border-tertiary)",padding:"3px 0"}}>
-                    <span style={{width:28,fontSize:11,color:"var(--color-text-tertiary)",flexShrink:0,fontFamily:"monospace"}}>{p.n}.</span>
-                    <span style={{flex:1,fontSize:13,fontFamily:"monospace",fontWeight:600,color:"var(--color-text-primary)",padding:"2px 6px"}}>{p.w}</span>
-                    <span style={{flex:1,fontSize:13,fontFamily:"monospace",color:"var(--color-text-secondary)",padding:"2px 6px"}}>{p.b??""}</span>
-                  </div>
-                ))}
+                {movePairs.map((p,i)=>{
+                  // moveQualities index: only player's moves (every other half-move starting from playerColor)
+                  // We store one badge per player move so index maps to move pair
+                  const wBadge = moveQualities[i*2] ?? null;   // white's move quality (index even)
+                  const bBadge = moveQualities[i*2+1] ?? null; // black's move quality (index odd)
+                  const isWhitePlayer = pCol==="w";
+                  const myBadgeW = isWhitePlayer ? wBadge : null;
+                  const myBadgeB = !isWhitePlayer ? bBadge : null;
+                  return(
+                    <div key={p.n} className="move-row" style={{display:"flex",alignItems:"center",borderBottom:"0.5px solid var(--color-border-tertiary)",padding:"3px 0",borderRadius:3}}>
+                      <span style={{width:28,fontSize:11,color:"var(--color-text-tertiary)",flexShrink:0,fontFamily:"monospace"}}>{p.n}.</span>
+                      <span style={{flex:1,fontSize:13,fontFamily:"monospace",fontWeight:600,color:"var(--color-text-primary)",padding:"2px 4px"}}>{p.w}</span>
+                      {myBadgeW&&<span title={myBadgeW.label} style={{fontSize:11,fontWeight:700,color:myBadgeW.color,marginRight:2,flexShrink:0}}>{myBadgeW.sym}</span>}
+                      {!myBadgeW&&<span style={{width:12,flexShrink:0}}/>}
+                      <span style={{flex:1,fontSize:13,fontFamily:"monospace",color:"var(--color-text-secondary)",padding:"2px 4px"}}>{p.b??""}</span>
+                      {myBadgeB&&<span title={myBadgeB.label} style={{fontSize:11,fontWeight:700,color:myBadgeB.color,marginRight:2,flexShrink:0}}>{myBadgeB.sym}</span>}
+                    </div>
+                  );
+                })}
               </div>
             )}
             {panelTab==="tutor"&&<div style={{flex:1}}><TutorChat height={290} placeholder="Ask about this position…"/></div>}

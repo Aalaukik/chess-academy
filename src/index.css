@@ -374,3 +374,11 @@ button:active { transform: scale(.97) !important; }
 /* Tutor message animation */
 .msg-in-left  { animation: msgSlideIn .2s ease forwards; }
 .msg-in-right { animation: msgSlideInRight .2s ease forwards; }
+
+/* Move quality badge pop animation */
+@keyframes badgePop {
+  0%   { opacity: 0; transform: scale(0.4) translateY(-6px); }
+  60%  { transform: scale(1.12) translateY(0); }
+  80%  { transform: scale(0.96); }
+  100% { opacity: 1; transform: scale(1); }
+}
