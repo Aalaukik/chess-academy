@@ -223,7 +223,6 @@ VITE_SUPABASE_URL=https://your-project-id.supabase.co
 VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
-> ⚠️ Never commit `.env` to Git. It's already in `.gitignore`.
 
 ### Running Locally
 
