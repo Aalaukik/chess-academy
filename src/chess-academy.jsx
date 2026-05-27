@@ -211,7 +211,6 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   const [loadErr,setLoadErr]=useState(false);
 
   // ── Move quality badges
-  const gRef=useRef(null);
   const preMoveEval = useRef(0);       // eval BEFORE player's move
   const [moveQualities, setMoveQualities] = useState([]); // one entry per half-move
   const [lastBadge, setLastBadge] = useState(null); // badge shown on board after move
@@ -282,6 +281,18 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   const [tutBusy,setTutBusy]=useState(false);
   const tutEndRef=useRef(null);
   const moveListRef=useRef(null);
+
+  // ── Game chess instance
+  const gRef=useRef(null);
+
+  // ── Drag-and-drop
+  const dragRef=useRef(null);           // {from, boardEl, noFlip}
+  const dragJustMoved=useRef(false);    // absorb the click that fires after a drag
+  const dragHandlersRef=useRef({});     // always-current handler refs for window listeners
+  const [ghostState,setGhostState]=useState(null); // {x,y,pk,isW} — floating piece
+
+  // ── Share result card
+  const [shareModal,setShareModal]=useState(false);
 
   // ── Load chess.js
   useEffect(()=>{
@@ -355,6 +366,137 @@ export default function ChessAcademy({ user = null, onSignOut }) {
     return                       { label:"Blunder",     sym:"???", color:"#E85555", bg:"rgba(232,85,85,.15)"   };
   }
 
+  // ── Convert mouse/touch position to board square ──────────────
+  function getSqFromPos(clientX, clientY, rect, fl){
+    const coordOff = showCoords ? 18 : 0;
+    const relX = clientX - rect.left - coordOff;
+    const relY = clientY - rect.top;
+    const ci = Math.floor(relX / SQ);
+    const ri = Math.floor(relY / SQ);
+    if(ci<0||ci>7||ri<0||ri>7) return null;
+    const bCol = fl ? 7-ci : ci;
+    const bRow = fl ? 7-ri : ri;
+    return `${String.fromCharCode(97+bCol)}${8-bRow}`;
+  }
+
+  // ── Drag start (mousedown / touchstart on a piece) ────────────
+  function startDrag(e, sq, boardEl, noFlip){
+    const g=gRef.current;
+    if(!g||gStatus!=="playing"||aiThink||promoDialog) return;
+    const piece=g.get(sq);
+    if(!piece||piece.color!==pCol) return;
+    e.preventDefault();
+    const clientX=e.touches?e.touches[0].clientX:e.clientX;
+    const clientY=e.touches?e.touches[0].clientY:e.clientY;
+    dragRef.current={from:sq, boardEl, noFlip:!!noFlip};
+    const pk=`${piece.color}${piece.type.toUpperCase()}`;
+    setGhostState({x:clientX, y:clientY, pk, isW:piece.color==="w"});
+    setSel(sq);
+    setLegal(g.moves({square:sq,verbose:true}).map(m=>m.to));
+  }
+
+  // ── Drag move ─────────────────────────────────────────────────
+  function onDragMove(e){
+    if(!dragRef.current) return;
+    if(e.cancelable) e.preventDefault();
+    const clientX=e.touches?e.touches[0].clientX:e.clientX;
+    const clientY=e.touches?e.touches[0].clientY:e.clientY;
+    setGhostState(s=>s?{...s,x:clientX,y:clientY}:null);
+  }
+
+  // ── Drag end — execute move if dropped on a legal square ──────
+  function onDragEnd(e){
+    if(!dragRef.current) return;
+    const {from, boardEl, noFlip:nf}=dragRef.current;
+    const clientX=e.changedTouches?e.changedTouches[0].clientX:e.clientX;
+    const clientY=e.changedTouches?e.changedTouches[0].clientY:e.clientY;
+    const rect=boardEl.getBoundingClientRect();
+    const fl=flipped&&!nf;
+    const to=getSqFromPos(clientX,clientY,rect,fl);
+    dragRef.current=null;
+    setGhostState(null);
+    dragJustMoved.current=true;
+    setTimeout(()=>{dragJustMoved.current=false;},120);
+
+    if(!to||to===from){setSel(null);setLegal([]);return;}
+    const g=gRef.current;
+    if(!g||gStatus!=="playing"||aiThink) return;
+    const legalMoves=g.moves({square:from,verbose:true}).map(m=>m.to);
+    if(!legalMoves.includes(to)){setSel(null);setLegal([]);return;}
+
+    const piece=g.get(from);
+    const isPromo=piece?.type==="p"&&((pCol==="w"&&to[1]==="8")||(pCol==="b"&&to[1]==="1"));
+    if(isPromo){preMoveEval.current=evalPos(g);setPromoDialog({from,to});setSel(null);setLegal([]);return;}
+
+    const evalBefore=evalPos(g);
+    const r=g.move({from,to,promotion:"q"});
+    if(r){
+      const evalAfter=evalPos(g);
+      const badge=classifyMove(evalBefore,evalAfter,pCol);
+      setMoveQualities(q=>[...q,badge]);
+      setLastBadge(badge);
+      setTimeout(()=>setLastBadge(null),2200);
+      setLastMv({from:r.from,to:r.to});setSel(null);setLegal([]);setHintSq(null);
+      if(r.captured) play("capture");
+      else if(r.flags.includes("k")||r.flags.includes("q")) play("castle");
+      else play("move");
+      if(g.inCheck()) play("check");
+      syncGame(g);
+      const aiC=pCol==="w"?"b":"w";
+      if(!g.isGameOver()&&g.turn()===aiC) setTimeout(()=>runAI(g),300);
+    } else {setSel(null);setLegal([]);}
+  }
+
+  // ── Share card helpers ────────────────────────────────────────
+  function computeAccuracy(qualities){
+    if(!qualities.length) return null;
+    const W={Best:100,Good:90,Inaccuracy:70,Mistake:40,Blunder:0};
+    return Math.round(qualities.reduce((s,q)=>s+(W[q.label]??50),0)/qualities.length);
+  }
+
+  function generateShareText(){
+    const acc=computeAccuracy(moveQualities);
+    const resultLine=
+      gStatus==="checkmate"?(winner===(pCol==="w"?"White":"Black")?"🏆 Victory!":"💀 Defeat")
+      :gStatus==="draw"||gStatus==="stalemate"?"🤝 Draw"
+      :gStatus==="resign"?"🏳 Resigned"
+      :gStatus==="timeout"?"⏰ Time out":"";
+    const good=moveQualities.filter(m=>m.label==="Best"||m.label==="Good").length;
+    const inac=moveQualities.filter(m=>m.label==="Inaccuracy").length;
+    const mist=moveQualities.filter(m=>m.label==="Mistake").length;
+    const blun=moveQualities.filter(m=>m.label==="Blunder").length;
+    return [
+      "♟ Chess Academy",
+      "",
+      `${resultLine} vs ${DIFFS[diff].label}`,
+      acc!=null?`Accuracy: ${acc}/100`:"",
+      `${hist.length} moves${opening?" · "+opening:""}`,
+      "",
+      `✓ ${good} best/good   ? ${inac} inaccurate   ?? ${mist} mistakes   ??? ${blun} blunders`,
+      "",
+      "https://chess-academy.vercel.app",
+    ].filter(l=>l!==null).join("\n");
+  }
+
+  // Keep drag handlers always fresh (no stale closure in window listeners)
+  dragHandlersRef.current={onDragMove,onDragEnd};
+
+  // ── Window-level drag listeners (mounted once) ────────────────
+  useEffect(()=>{
+    const mm=(e)=>dragHandlersRef.current.onDragMove(e);
+    const mu=(e)=>dragHandlersRef.current.onDragEnd(e);
+    window.addEventListener("mousemove",mm);
+    window.addEventListener("mouseup",mu);
+    window.addEventListener("touchmove",mm,{passive:false});
+    window.addEventListener("touchend",mu);
+    return()=>{
+      window.removeEventListener("mousemove",mm);
+      window.removeEventListener("mouseup",mu);
+      window.removeEventListener("touchmove",mm);
+      window.removeEventListener("touchend",mu);
+    };
+  },[]);
+
   function startGame(){
     if(!loaded) return;
     clearInterval(timerRef.current);
@@ -365,6 +507,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
     setGStatus("playing");setWinner(null);setHist([]);setSel(null);setLegal([]);
     setLastMv(null);setInChk(false);setEvalBar(50);setHintSq(null);setAiThink(false);setOpening("");
     setMoveQualities([]); setLastBadge(null); preMoveEval.current=0;
+    setShareModal(false);
     setTimeW(timeCtrl);setTimeB(timeCtrl);
     setFlipped(pCol==="b");
     setMsgs([{role:"assistant",content:`Let's play! I'm set to ${DIFFS[diff].label} difficulty ♟ Ask me anything about chess, moves, or strategy!`}]);
@@ -396,6 +539,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
 
   function handleSqClick(sq){
     const g=gRef.current;
+    if(dragJustMoved.current){dragJustMoved.current=false;return;}
     if(!g||gStatus!=="playing"||aiThink||promoDialog) return;
     if(g.turn()!==pCol) return;
     if(sel&&legal.includes(sq)){
@@ -743,14 +887,15 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   // ════════════════════════════════════════════════════════════════
   //  BOARD RENDERER
   // ════════════════════════════════════════════════════════════════
-  function Board({brd,onSq,selSq,legalSqs=[],lastMove=null,noFlip=false,chkSq=null,hintSq2=null,sz=SQ}){
+  function Board({brd,onSq,selSq,legalSqs=[],lastMove=null,noFlip=false,chkSq=null,hintSq2=null,sz=SQ,onPieceDragStart=null}){
+    const boardDivRef=useRef(null);
     const t=THEMES[theme];
     const fl=flipped&&!noFlip;
     const rows=fl?[...brd].reverse():brd;
     const isPlayBoard=!noFlip;
     const isMyTurnNow=gRef.current?.turn()===pCol;
     return(
-      <div style={{display:"inline-flex",flexDirection:"column",borderRadius:6,overflow:"hidden",
+      <div ref={boardDivRef} style={{display:"inline-flex",flexDirection:"column",borderRadius:6,overflow:"hidden",
         boxShadow:"0 20px 60px rgba(0,0,0,.55),0 3px 10px rgba(0,0,0,.4)",
         border:`2px solid ${t.bdr}`,
         outline: isPlayBoard && gStatus==="playing"
@@ -758,7 +903,9 @@ export default function ChessAcademy({ user = null, onSignOut }) {
           : "3px solid transparent",
         outlineOffset:"2px",
         transition:"outline-color .4s ease",
-        boxSizing:"border-box"}}>
+        boxSizing:"border-box",
+        userSelect:"none",
+        WebkitUserSelect:"none"}}>
         {rows.map((rowData,ri)=>{
           const bRow=fl?7-ri:ri;const rank=8-bRow;
           const dispRow=fl?[...rowData].reverse():rowData;
@@ -775,14 +922,16 @@ export default function ChessAcademy({ user = null, onSignOut }) {
                 const isChk=chkSq===sq;const isHint=hintSq2===sq;
                 const pk=piece?`${piece.color}${piece.type.toUpperCase()}`:null;
                 const isW=piece?.color==="w";
+                // Hide the piece being dragged from its origin square
+                const isBeingDragged=dragRef.current?.from===sq;
                 let bg=isLight?t.l:t.d;
                 if(isSel) bg=t.sel;else if(isLF||isLT) bg=t.last;
                 if(isChk) bg="rgba(220,60,40,.72)";
-                const isJustMoved = isLT;
+                const isJustMoved=isLT;
                 return(
                   <div key={ci} onClick={()=>onSq(sq)}
                     className="board-sq"
-                    style={{width:sz,height:sz,background:bg,cursor:"pointer",
+                    style={{width:sz,height:sz,background:bg,cursor:piece&&piece.color===pCol?"grab":"pointer",
                       display:"flex",alignItems:"center",justifyContent:"center",
                       position:"relative",transition:"background .08s",
                       outline:isSel?"2.5px solid rgba(255,255,0,.95)":isHint?"2.5px solid rgba(80,200,80,.95)":"none",
@@ -791,7 +940,21 @@ export default function ChessAcademy({ user = null, onSignOut }) {
                     }}>
                     {isLeg&&!piece&&<div style={{width:Math.round(sz*.34),height:Math.round(sz*.34),borderRadius:"50%",background:t.hint,pointerEvents:"none",animation:"hintAppear .18s ease-out"}}/>}
                     {isLeg&&piece&&<div style={{position:"absolute",inset:0,boxShadow:`inset 0 0 0 4px ${t.hint}`,pointerEvents:"none",borderRadius:2}}/>}
-                    {piece&&<span className="chess-piece" style={{fontSize:Math.round(sz*.82),lineHeight:1,userSelect:"none",pointerEvents:"none",color:isW?"#fff":"#0A0808",textShadow:isW?"0 0 6px #000,0 2px 8px rgba(0,0,0,.95),0 0 2px #222":"0 0 3px rgba(255,255,255,.25),0 1px 5px rgba(0,0,0,.5)",position:"relative",zIndex:1}}>{UNI[pk]}</span>}
+                    {piece&&<span
+                      className="chess-piece"
+                      onMouseDown={onPieceDragStart?(e)=>{e.stopPropagation();onPieceDragStart(e,sq,boardDivRef.current,noFlip);}:undefined}
+                      onTouchStart={onPieceDragStart?(e)=>{e.stopPropagation();onPieceDragStart(e,sq,boardDivRef.current,noFlip);}:undefined}
+                      style={{
+                        fontSize:Math.round(sz*.82),lineHeight:1,userSelect:"none",
+                        color:isW?"#fff":"#0A0808",
+                        textShadow:isW?"0 0 6px #000,0 2px 8px rgba(0,0,0,.95),0 0 2px #222":"0 0 3px rgba(255,255,255,.25),0 1px 5px rgba(0,0,0,.5)",
+                        position:"relative",zIndex:1,
+                        opacity:isBeingDragged?0:1,
+                        cursor:piece.color===pCol?"grab":"default",
+                        transition:"opacity .05s",
+                        WebkitUserSelect:"none",
+                        touchAction:"none",
+                      }}>{UNI[pk]}</span>}
                   </div>
                 );
               })}
@@ -904,7 +1067,104 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   }
 
   // ════════════════════════════════════════════════════════════════
-  //  LOADING
+  //  SHARE MODAL
+  // ════════════════════════════════════════════════════════════════
+  function ShareModal(){
+    const [copied,setCopied]=useState(false);
+    const text=generateShareText();
+    const acc=computeAccuracy(moveQualities);
+    const iWon=winner===(pCol==="w"?"White":"Black");
+    const accColor=acc==null?"var(--color-text-secondary)":acc>=85?"#5CB88A":acc>=65?"#F5C842":"#E85555";
+
+    async function copy(){
+      try{await navigator.clipboard.writeText(text);setCopied(true);setTimeout(()=>setCopied(false),2200);}
+      catch{/* fallback: select all text */}
+    }
+
+    return(
+      <div onClick={()=>setShareModal(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.72)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:2000,padding:"0 1rem"}}>
+        <div onClick={e=>e.stopPropagation()} style={{background:"var(--color-background-primary)",borderRadius:"var(--border-radius-lg)",padding:"1.5rem",width:"100%",maxWidth:360,boxShadow:"0 24px 64px rgba(0,0,0,.65)",border:"0.5px solid var(--color-border-secondary)"}}>
+          {/* Header */}
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+            <span style={{fontSize:16,fontWeight:600,color:"var(--color-text-primary)"}}>♟ Share Result</span>
+            <button onClick={()=>setShareModal(false)} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"var(--color-text-tertiary)",lineHeight:1}}>×</button>
+          </div>
+
+          {/* Result highlight */}
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,padding:"12px 14px",borderRadius:"var(--border-radius-md)",background:iWon?"rgba(92,184,138,.1)":"rgba(232,85,85,.08)",border:`0.5px solid ${iWon?"#5CB88A55":"#E8555540"}`}}>
+            <span style={{fontSize:30}}>{gStatus==="checkmate"?(iWon?"🏆":"💀"):gStatus==="resign"?"🏳":gStatus==="timeout"?"⏰":"🤝"}</span>
+            <div>
+              <div style={{fontSize:15,fontWeight:600,color:"var(--color-text-primary)"}}>
+                {gStatus==="checkmate"?`${winner} wins!`:gStatus==="stalemate"?"Stalemate":gStatus==="resign"?"Resigned":gStatus==="timeout"?"Time out":"Draw"}
+              </div>
+              <div style={{fontSize:12,color:"var(--color-text-secondary)"}}>vs {DIFFS[diff].label} · {hist.length} moves{opening?" · "+opening:""}</div>
+            </div>
+            {acc!=null&&<div style={{marginLeft:"auto",textAlign:"center"}}>
+              <div style={{fontSize:22,fontWeight:600,color:accColor}}>{acc}</div>
+              <div style={{fontSize:10,color:"var(--color-text-tertiary)"}}>accuracy</div>
+            </div>}
+          </div>
+
+          {/* Move quality row */}
+          {moveQualities.length>0&&(
+            <div style={{display:"flex",gap:6,marginBottom:16,justifyContent:"center"}}>
+              {[
+                {sym:"!",   label:"Best/Good",  color:"#5CB88A", count:moveQualities.filter(m=>m.label==="Best"||m.label==="Good").length},
+                {sym:"?",   label:"Inaccuracy", color:"#F5C842", count:moveQualities.filter(m=>m.label==="Inaccuracy").length},
+                {sym:"??",  label:"Mistake",    color:"#F08C4A", count:moveQualities.filter(m=>m.label==="Mistake").length},
+                {sym:"???", label:"Blunder",    color:"#E85555", count:moveQualities.filter(m=>m.label==="Blunder").length},
+              ].map(s=>(
+                <div key={s.sym} title={s.label} style={{flex:1,textAlign:"center",padding:"8px 4px",borderRadius:"var(--border-radius-md)",background:`${s.color}14`,border:`0.5px solid ${s.color}44`}}>
+                  <div style={{fontSize:13,fontWeight:700,color:s.color}}>{s.sym}</div>
+                  <div style={{fontSize:15,fontWeight:600,color:s.color}}>{s.count}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Text preview */}
+          <div style={{background:"var(--color-background-secondary)",borderRadius:"var(--border-radius-md)",padding:"10px 12px",marginBottom:14,fontFamily:"monospace",fontSize:12,lineHeight:1.9,whiteSpace:"pre-wrap",color:"var(--color-text-secondary)",border:"0.5px solid var(--color-border-tertiary)"}}>
+            {text}
+          </div>
+
+          {/* Copy button */}
+          <button onClick={copy} style={{width:"100%",padding:"11px",background:copied?"#5CB88A":"#4A43A0",color:"#fff",border:"none",borderRadius:"var(--border-radius-md)",fontSize:14,fontWeight:600,cursor:"pointer",transition:"background .25s"}}>
+            {copied?"✓ Copied to clipboard!":"📋 Copy to clipboard"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  //  GHOST PIECE (floating piece that follows cursor during drag)
+  // ════════════════════════════════════════════════════════════════
+  function GhostPiece(){
+    if(!ghostState) return null;
+    const {x,y,pk,isW}=ghostState;
+    return(
+      <div style={{
+        position:"fixed",
+        left:x-SQ*0.6,
+        top:y-SQ*0.6,
+        width:SQ*1.2,
+        height:SQ*1.2,
+        fontSize:Math.round(SQ*1.0),
+        display:"flex",alignItems:"center",justifyContent:"center",
+        pointerEvents:"none",
+        zIndex:9999,
+        opacity:0.92,
+        color:isW?"#fff":"#0A0808",
+        textShadow:isW?"0 0 8px #000,0 2px 10px rgba(0,0,0,.95)":"0 0 3px rgba(255,255,255,.3)",
+        transform:"scale(1.12)",
+        userSelect:"none",
+        WebkitUserSelect:"none",
+        filter:"drop-shadow(0 6px 14px rgba(0,0,0,.55))",
+      }}>
+        {UNI[pk]}
+      </div>
+    );
+  }
   // ════════════════════════════════════════════════════════════════
   if(!loaded) return(
     <div style={{minHeight:500,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,fontFamily:"var(--font-sans)"}}>
@@ -1130,11 +1390,22 @@ export default function ChessAcademy({ user = null, onSignOut }) {
             <span style={{fontSize:26}}>{gStatus==="checkmate"?(iWon?"🏆":"💀"):gStatus==="resign"?"🏳":gStatus==="timeout"?"⏰":"🤝"}</span>
             <div style={{flex:1}}>
               <div style={{fontSize:15,fontWeight:600,color:"var(--color-text-primary)"}}>{gStatus==="checkmate"?`${winner} wins by checkmate!`:gStatus==="stalemate"?"Stalemate — draw!":gStatus==="timeout"?`${winner} wins on time!`:gStatus==="resign"?`${winner} wins — you resigned`:"Draw!"}</div>
-              <div style={{fontSize:12,color:"var(--color-text-secondary)",marginTop:2}}>{hist.length} moves played</div>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginTop:2}}>
+                <span style={{fontSize:12,color:"var(--color-text-secondary)"}}>{hist.length} moves played</span>
+                {computeAccuracy(moveQualities)!=null&&(()=>{
+                  const acc=computeAccuracy(moveQualities);
+                  const c=acc>=85?"#5CB88A":acc>=65?"#F5C842":"#E85555";
+                  return <span style={{fontSize:12,fontWeight:600,color:c}}>Accuracy: {acc}/100</span>;
+                })()}
+              </div>
             </div>
-            <button onClick={startGame} style={{padding:"7px 16px",background:"#4A43A0",color:"#fff",border:"none",borderRadius:"var(--border-radius-md)",fontSize:13,fontWeight:500,cursor:"pointer"}}>Rematch</button>
+            <div style={{display:"flex",gap:6}}>
+              <button onClick={()=>setShareModal(true)} style={{padding:"7px 12px",background:"none",color:"var(--color-text-secondary)",border:"0.5px solid var(--color-border-secondary)",borderRadius:"var(--border-radius-md)",fontSize:13,cursor:"pointer"}}>📤 Share</button>
+              <button onClick={startGame} style={{padding:"7px 16px",background:"#4A43A0",color:"#fff",border:"none",borderRadius:"var(--border-radius-md)",fontSize:13,fontWeight:500,cursor:"pointer"}}>Rematch</button>
+            </div>
           </div>
         )}
+        {shareModal&&<ShareModal/>}
         {/* Move quality summary — shown after game ends */}
         {gameOver && moveQualities.length>0 &&(
           <div style={{marginBottom:12,padding:"10px 14px",borderRadius:"var(--border-radius-md)",background:"var(--color-background-secondary)",border:"0.5px solid var(--color-border-tertiary)"}}>
@@ -1172,7 +1443,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
                 <div style={{height:`${evalBar}%`,background:"#fff",transition:"height .7s ease",borderRadius:4}}/>
               </div>
               <div style={{position:"relative"}}>
-                <Board brd={board} onSq={handleSqClick} selSq={sel} legalSqs={legal} lastMove={lastMv} chkSq={chkSq} hintSq2={hintSq} showGlow={true} myTurn={isMyTurn}/>
+                <Board brd={board} onSq={handleSqClick} selSq={sel} legalSqs={legal} lastMove={lastMv} chkSq={chkSq} hintSq2={hintSq} showGlow={true} myTurn={isMyTurn} onPieceDragStart={startDrag}/>
                 {lastBadge&&(
                   <div style={{position:"absolute",top:-14,right:-10,zIndex:10,
                     background:lastBadge.bg,
@@ -1251,6 +1522,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
             </div>
           </div>
         </div>
+        <GhostPiece/>
       </div>
     );
   }
