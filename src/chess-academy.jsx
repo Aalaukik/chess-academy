@@ -211,6 +211,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   const [loadErr,setLoadErr]=useState(false);
 
   // ── Move quality badges
+  const gRef=useRef(null);
   const preMoveEval = useRef(0);       // eval BEFORE player's move
   const [moveQualities, setMoveQualities] = useState([]); // one entry per half-move
   const [lastBadge, setLastBadge] = useState(null); // badge shown on board after move
@@ -353,6 +354,8 @@ export default function ChessAcademy({ user = null, onSignOut }) {
     if(delta >= -150)     return { label:"Mistake",     sym:"??",  color:"#F08C4A", bg:"rgba(240,140,74,.15)"  };
     return                       { label:"Blunder",     sym:"???", color:"#E85555", bg:"rgba(232,85,85,.15)"   };
   }
+
+  function startGame(){
     if(!loaded) return;
     clearInterval(timerRef.current);
     const g=new ChessLib.current();
