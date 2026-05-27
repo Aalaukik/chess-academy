@@ -290,6 +290,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   const dragJustMoved=useRef(false);    // absorb the click that fires after a drag
   const dragHandlersRef=useRef({});     // always-current handler refs for window listeners
   const [ghostState,setGhostState]=useState(null); // {x,y,pk,isW} — floating piece
+  const playBoardRef=useRef(null);      // stable ref to the play board DOM node
 
   // ── Share result card
   const [shareModal,setShareModal]=useState(false);
@@ -371,10 +372,13 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   useEffect(()=>{flippedRef.current=flipped;},[flipped]);
 
   // ── Convert mouse/touch position to board square ──────────────
+  // rect is from the wrapper div (position:relative) that wraps <Board>
+  // The Board renders: optional 18px coord col, then 8×SQ squares
   function getSqFromPos(clientX, clientY, rect, fl){
-    const coordOff = showCoords ? 18 : 0;
-    const relX = clientX - rect.left - coordOff;
-    const relY = clientY - rect.top;
+    const coordOff = showCoords ? 18 : 0; // coord label column inside the board
+    const borderOff = 2;                   // board has a 2px border
+    const relX = clientX - rect.left - borderOff - coordOff;
+    const relY = clientY - rect.top  - borderOff;
     const ci = Math.floor(relX / SQ);
     const ri = Math.floor(relY / SQ);
     if(ci<0||ci>7||ri<0||ri>7) return null;
@@ -384,7 +388,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   }
 
   // ── Drag start (mousedown / touchstart on a piece) ────────────
-  function startDrag(e, sq, boardEl, noFlip){
+  function startDrag(e, sq){
     const g=gRef.current;
     if(!g||gStatus!=="playing"||aiThink||promoDialog) return;
     const piece=g.get(sq);
@@ -394,7 +398,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
     const clientX=e.touches?e.touches[0].clientX:e.clientX;
     const clientY=e.touches?e.touches[0].clientY:e.clientY;
     // Store drag origin for distance check (distinguish click vs drag)
-    dragRef.current={from:sq, boardEl, noFlip:!!noFlip, startX:clientX, startY:clientY, moved:false};
+    dragRef.current={from:sq, startX:clientX, startY:clientY, moved:false};
     const pk=`${piece.color}${piece.type.toUpperCase()}`;
     setGhostState({x:clientX, y:clientY, pk, isW:piece.color==="w"});
     setSel(sq);
@@ -419,7 +423,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   // ── Drag end — execute move if dropped on a legal square ──────
   function onDragEnd(e){
     if(!dragRef.current) return;
-    const {from, boardEl, noFlip:nf, moved}=dragRef.current;
+    const {from, moved}=dragRef.current;
     dragRef.current=null;
     setGhostState(null);
 
@@ -432,8 +436,12 @@ export default function ChessAcademy({ user = null, onSignOut }) {
 
     const clientX=e.changedTouches?e.changedTouches[0].clientX:e.clientX;
     const clientY=e.changedTouches?e.changedTouches[0].clientY:e.clientY;
+
+    // Use the stable parent-level ref — never stale
+    const boardEl=playBoardRef.current;
+    if(!boardEl){setSel(null);setLegal([]);return;}
     const rect=boardEl.getBoundingClientRect();
-    const fl=flippedRef.current&&!nf;
+    const fl=flippedRef.current;
     const to=getSqFromPos(clientX,clientY,rect,fl);
 
     if(!to||to===from){setSel(null);setLegal([]);return;}
@@ -906,14 +914,13 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   //  BOARD RENDERER
   // ════════════════════════════════════════════════════════════════
   function Board({brd,onSq,selSq,legalSqs=[],lastMove=null,noFlip=false,chkSq=null,hintSq2=null,sz=SQ,onPieceDragStart=null}){
-    const boardDivRef=useRef(null);
     const t=THEMES[theme];
     const fl=flipped&&!noFlip;
     const rows=fl?[...brd].reverse():brd;
     const isPlayBoard=!noFlip;
     const isMyTurnNow=gRef.current?.turn()===pCol;
     return(
-      <div ref={boardDivRef} style={{display:"inline-flex",flexDirection:"column",borderRadius:6,overflow:"hidden",
+      <div style={{display:"inline-flex",flexDirection:"column",borderRadius:6,overflow:"hidden",
         boxShadow:"0 20px 60px rgba(0,0,0,.55),0 3px 10px rgba(0,0,0,.4)",
         border:`2px solid ${t.bdr}`,
         outline: isPlayBoard && gStatus==="playing"
@@ -960,8 +967,8 @@ export default function ChessAcademy({ user = null, onSignOut }) {
                     {isLeg&&piece&&<div style={{position:"absolute",inset:0,boxShadow:`inset 0 0 0 4px ${t.hint}`,pointerEvents:"none",borderRadius:2}}/>}
                     {piece&&<span
                       className="chess-piece"
-                      onMouseDown={onPieceDragStart?(e)=>{e.stopPropagation();onPieceDragStart(e,sq,boardDivRef.current,noFlip);}:undefined}
-                      onTouchStart={onPieceDragStart?(e)=>{e.stopPropagation();onPieceDragStart(e,sq,boardDivRef.current,noFlip);}:undefined}
+                      onMouseDown={onPieceDragStart?(e)=>{e.stopPropagation();onPieceDragStart(e,sq);}:undefined}
+                      onTouchStart={onPieceDragStart?(e)=>{e.stopPropagation();onPieceDragStart(e,sq);}:undefined}
                       style={{
                         fontSize:Math.round(sz*.82),lineHeight:1,userSelect:"none",
                         color:isW?"#fff":"#0A0808",
@@ -1460,7 +1467,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
               <div style={{width:8,height:SQ*8+(showCoords?22:0),background:"var(--color-border-tertiary)",borderRadius:4,overflow:"hidden",flexShrink:0,display:"flex",flexDirection:"column-reverse"}}>
                 <div style={{height:`${evalBar}%`,background:"#fff",transition:"height .7s ease",borderRadius:4}}/>
               </div>
-              <div style={{position:"relative"}}>
+              <div style={{position:"relative"}} ref={playBoardRef}>
                 <Board brd={board} onSq={handleSqClick} selSq={sel} legalSqs={legal} lastMove={lastMv} chkSq={chkSq} hintSq2={hintSq} showGlow={true} myTurn={isMyTurn} onPieceDragStart={startDrag}/>
                 {lastBadge&&(
                   <div style={{position:"absolute",top:-14,right:-10,zIndex:10,
