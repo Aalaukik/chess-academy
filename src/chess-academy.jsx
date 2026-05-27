@@ -366,6 +366,10 @@ export default function ChessAcademy({ user = null, onSignOut }) {
     return                       { label:"Blunder",     sym:"???", color:"#E85555", bg:"rgba(232,85,85,.15)"   };
   }
 
+  // ── Keep flipped in a ref so drag-end closure always reads latest ─
+  const flippedRef=useRef(flipped);
+  useEffect(()=>{flippedRef.current=flipped;},[flipped]);
+
   // ── Convert mouse/touch position to board square ──────────────
   function getSqFromPos(clientX, clientY, rect, fl){
     const coordOff = showCoords ? 18 : 0;
@@ -385,10 +389,12 @@ export default function ChessAcademy({ user = null, onSignOut }) {
     if(!g||gStatus!=="playing"||aiThink||promoDialog) return;
     const piece=g.get(sq);
     if(!piece||piece.color!==pCol) return;
-    e.preventDefault();
+    // Only prevent default for touch (prevents scroll); mouse clicks still fire normally
+    if(e.touches) e.preventDefault();
     const clientX=e.touches?e.touches[0].clientX:e.clientX;
     const clientY=e.touches?e.touches[0].clientY:e.clientY;
-    dragRef.current={from:sq, boardEl, noFlip:!!noFlip};
+    // Store drag origin for distance check (distinguish click vs drag)
+    dragRef.current={from:sq, boardEl, noFlip:!!noFlip, startX:clientX, startY:clientY, moved:false};
     const pk=`${piece.color}${piece.type.toUpperCase()}`;
     setGhostState({x:clientX, y:clientY, pk, isW:piece.color==="w"});
     setSel(sq);
@@ -401,22 +407,34 @@ export default function ChessAcademy({ user = null, onSignOut }) {
     if(e.cancelable) e.preventDefault();
     const clientX=e.touches?e.touches[0].clientX:e.clientX;
     const clientY=e.touches?e.touches[0].clientY:e.clientY;
+    // Mark as a real drag once cursor moves >5px
+    if(!dragRef.current.moved){
+      const dx=clientX-dragRef.current.startX;
+      const dy=clientY-dragRef.current.startY;
+      if(Math.abs(dx)>5||Math.abs(dy)>5) dragRef.current.moved=true;
+    }
     setGhostState(s=>s?{...s,x:clientX,y:clientY}:null);
   }
 
   // ── Drag end — execute move if dropped on a legal square ──────
   function onDragEnd(e){
     if(!dragRef.current) return;
-    const {from, boardEl, noFlip:nf}=dragRef.current;
+    const {from, boardEl, noFlip:nf, moved}=dragRef.current;
+    dragRef.current=null;
+    setGhostState(null);
+
+    // If cursor barely moved, treat as a click — let onClick handle it
+    if(!moved) return;
+
+    // Real drag: suppress the following click event
+    dragJustMoved.current=true;
+    setTimeout(()=>{dragJustMoved.current=false;},150);
+
     const clientX=e.changedTouches?e.changedTouches[0].clientX:e.clientX;
     const clientY=e.changedTouches?e.changedTouches[0].clientY:e.clientY;
     const rect=boardEl.getBoundingClientRect();
-    const fl=flipped&&!nf;
+    const fl=flippedRef.current&&!nf;
     const to=getSqFromPos(clientX,clientY,rect,fl);
-    dragRef.current=null;
-    setGhostState(null);
-    dragJustMoved.current=true;
-    setTimeout(()=>{dragJustMoved.current=false;},120);
 
     if(!to||to===from){setSel(null);setLegal([]);return;}
     const g=gRef.current;
