@@ -254,6 +254,12 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   const [solvedPz,setSolvedPz]=useState(new Set());
   const [streak,setStreak]=useState(0);
   const [stats,setStats]=useState({w:0,l:0,d:0});
+  const [elo,setElo]=useState(1200); // player Elo rating
+
+  // ── pass-and-play
+  const [gameMode,setGameMode]=useState("ai"); // "ai" | "p2p"
+  const [p2pNames,setP2pNames]=useState({w:"White",b:"Black"});
+  const [p2pFlipOnTurn,setP2pFlipOnTurn]=useState(true); // auto-flip board each turn
 
   // ── learn
   const [lTrack,setLTrack]=useState("beginner");
@@ -314,14 +320,15 @@ export default function ChessAcademy({ user = null, onSignOut }) {
           if(p.solved) setSolvedPz(new Set(p.solved));
           if(p.streak) setStreak(p.streak);
           if(p.stats) setStats(p.stats);
+          if(p.elo) setElo(p.elo);
         }
       }catch{}
     })();
   },[]);
 
-  async function saveProgress(dl=doneLessons,sp=solvedPz,sk=streak,st=stats){
-    if(user) return; // Supabase hook handles saves for logged-in users
-    try{await window.storage?.set("chess_v2",JSON.stringify({done:[...dl],solved:[...sp],streak:sk,stats:st}));}catch{}
+  async function saveProgress(dl=doneLessons,sp=solvedPz,sk=streak,st=stats,el=elo){
+    if(user) return;
+    try{await window.storage?.set("chess_v2",JSON.stringify({done:[...dl],solved:[...sp],streak:sk,stats:st,elo:el}));}catch{}
   }
 
   // ── Supabase progress sync (logged-in users only)
@@ -334,8 +341,15 @@ export default function ChessAcademy({ user = null, onSignOut }) {
 
   function play(k){if(soundOn) SND[k]?.();}
 
-  // ════════════════════════════════════════════════════════════════
-  //  GAME LOGIC
+  // ── Elo calculation (standard K=32 formula) ────────────────────
+  // diffElos: array of pseudo-Elo per difficulty [800,1000,1200,1600,2000]
+  const DIFF_ELO=[800,1000,1200,1600,2000];
+  function calcNewElo(playerElo, opponentElo, result){
+    // result: 1=win, 0.5=draw, 0=loss
+    const K=32;
+    const expected=1/(1+Math.pow(10,(opponentElo-playerElo)/400));
+    return Math.round(playerElo + K*(result-expected));
+  }
   // ════════════════════════════════════════════════════════════════
   function syncGame(g=gRef.current){
     if(!g) return;
@@ -346,6 +360,10 @@ export default function ChessAcademy({ user = null, onSignOut }) {
     setOpening(detectOpening(h));
     const raw=Math.max(-15,Math.min(15,evalPos(g)/100));
     setEvalBar(Math.round(((raw+15)/30)*100));
+    // In p2p mode, auto-flip so the active player always faces their pieces
+    if(gameMode==="p2p"&&p2pFlipOnTurn&&!g.isGameOver()){
+      setFlipped(g.turn()==="b");
+    }
     if(g.isCheckmate()){setGStatus("checkmate");setWinner(g.turn()==="w"?"Black":"White");setTimerOn(false);}
     else if(g.isStalemate()){setGStatus("stalemate");setTimerOn(false);}
     else if(g.isDraw()){setGStatus("draw");setTimerOn(false);}
@@ -392,7 +410,9 @@ export default function ChessAcademy({ user = null, onSignOut }) {
     const g=gRef.current;
     if(!g||gStatus!=="playing"||aiThink||promoDialog) return;
     const piece=g.get(sq);
-    if(!piece||piece.color!==pCol) return;
+    const activeTurn=g.turn();
+    const canDrag=gameMode==="p2p"?piece&&piece.color===activeTurn:piece&&piece.color===pCol;
+    if(!canDrag) return;
     // Only prevent default for touch (prevents scroll); mouse clicks still fire normally
     if(e.touches) e.preventDefault();
     const clientX=e.touches?e.touches[0].clientX:e.clientX;
@@ -447,18 +467,20 @@ export default function ChessAcademy({ user = null, onSignOut }) {
     if(!to||to===from){setSel(null);setLegal([]);return;}
     const g=gRef.current;
     if(!g||gStatus!=="playing"||aiThink) return;
+    const activeTurn=g.turn();
+    if(gameMode==="ai"&&activeTurn!==pCol){setSel(null);setLegal([]);return;}
     const legalMoves=g.moves({square:from,verbose:true}).map(m=>m.to);
     if(!legalMoves.includes(to)){setSel(null);setLegal([]);return;}
 
     const piece=g.get(from);
-    const isPromo=piece?.type==="p"&&((pCol==="w"&&to[1]==="8")||(pCol==="b"&&to[1]==="1"));
+    const isPromo=piece?.type==="p"&&((activeTurn==="w"&&to[1]==="8")||(activeTurn==="b"&&to[1]==="1"));
     if(isPromo){preMoveEval.current=evalPos(g);setPromoDialog({from,to});setSel(null);setLegal([]);return;}
 
     const evalBefore=evalPos(g);
     const r=g.move({from,to,promotion:"q"});
     if(r){
       const evalAfter=evalPos(g);
-      const badge=classifyMove(evalBefore,evalAfter,pCol);
+      const badge=classifyMove(evalBefore,evalAfter,activeTurn);
       setMoveQualities(q=>[...q,badge]);
       setLastBadge(badge);
       setTimeout(()=>setLastBadge(null),2200);
@@ -468,8 +490,10 @@ export default function ChessAcademy({ user = null, onSignOut }) {
       else play("move");
       if(g.inCheck()) play("check");
       syncGame(g);
-      const aiC=pCol==="w"?"b":"w";
-      if(!g.isGameOver()&&g.turn()===aiC) setTimeout(()=>runAI(g),300);
+      if(gameMode==="ai"){
+        const aiC=pCol==="w"?"b":"w";
+        if(!g.isGameOver()&&g.turn()===aiC) setTimeout(()=>runAI(g),300);
+      }
     } else {setSel(null);setLegal([]);}
   }
 
@@ -535,12 +559,19 @@ export default function ChessAcademy({ user = null, onSignOut }) {
     setMoveQualities([]); setLastBadge(null); preMoveEval.current=0;
     setShareModal(false);
     setTimeW(timeCtrl);setTimeB(timeCtrl);
-    setFlipped(pCol==="b");
-    setMsgs([{role:"assistant",content:`Let's play! I'm set to ${DIFFS[diff].label} difficulty ♟ Ask me anything about chess, moves, or strategy!`}]);
+    if(gameMode==="p2p"){
+      setFlipped(false); // white always starts facing up
+    } else {
+      setFlipped(pCol==="b");
+    }
+    const intro=gameMode==="p2p"
+      ?`Pass-and-play game started! ${p2pNames.w} (White) moves first. Good luck to both players! ♟`
+      :`Let's play! I'm set to ${DIFFS[diff].label} difficulty ♟ Ask me anything about chess, moves, or strategy!`;
+    setMsgs([{role:"assistant",content:intro}]);
     setPanelTab("moves");
     setScreen("play");
     if(useTimer) setTimerOn(true);
-    if(pCol==="b") setTimeout(()=>runAI(g),600);
+    if(gameMode==="ai"&&pCol==="b") setTimeout(()=>runAI(g),600);
   }
 
   function runAI(g=gRef.current){
@@ -567,40 +598,41 @@ export default function ChessAcademy({ user = null, onSignOut }) {
     const g=gRef.current;
     if(dragJustMoved.current){dragJustMoved.current=false;return;}
     if(!g||gStatus!=="playing"||aiThink||promoDialog) return;
-    if(g.turn()!==pCol) return;
+    // In AI mode only the player's colour moves; in p2p both colours move
+    const activeTurn=g.turn();
+    if(gameMode==="ai"&&activeTurn!==pCol) return;
     if(sel&&legal.includes(sq)){
       const piece=g.get(sel);
-      const isPromo=piece?.type==="p"&&((pCol==="w"&&sq[1]==="8")||(pCol==="b"&&sq[1]==="1"));
+      const isPromo=piece?.type==="p"&&((activeTurn==="w"&&sq[1]==="8")||(activeTurn==="b"&&sq[1]==="1"));
       if(isPromo){
-        // Capture eval before promotion move
         preMoveEval.current = evalPos(g);
         setPromoDialog({from:sel,to:sq});
         return;
       }
-      // Capture eval BEFORE the move
       const evalBefore = evalPos(g);
       const r=g.move({from:sel,to:sq,promotion:"q"});
       if(r){
-        // Classify immediately after move
         const evalAfter = evalPos(g);
-        const badge = classifyMove(evalBefore, evalAfter, pCol);
+        const badge = classifyMove(evalBefore, evalAfter, activeTurn);
         setMoveQualities(q=>[...q, badge]);
         setLastBadge(badge);
         setTimeout(()=>setLastBadge(null), 2200);
-
         setLastMv({from:r.from,to:r.to});setSel(null);setLegal([]);setHintSq(null);
         if(r.captured) play("capture");
         else if(r.flags.includes("k")||r.flags.includes("q")) play("castle");
         else play("move");
         if(g.inCheck()) play("check");
         syncGame(g);
-        const aiC=pCol==="w"?"b":"w";
-        if(!g.isGameOver()&&g.turn()===aiC) setTimeout(()=>runAI(g),300);
+        if(gameMode==="ai"){
+          const aiC=pCol==="w"?"b":"w";
+          if(!g.isGameOver()&&g.turn()===aiC) setTimeout(()=>runAI(g),300);
+        }
       }
       return;
     }
     const piece=g.get(sq);
-    if(piece&&piece.color===pCol){setSel(sq);setLegal(g.moves({square:sq,verbose:true}).map(m=>m.to));}
+    const canSelect=gameMode==="p2p"?piece&&piece.color===activeTurn:piece&&piece.color===pCol;
+    if(canSelect){setSel(sq);setLegal(g.moves({square:sq,verbose:true}).map(m=>m.to));}
     else{setSel(null);setLegal([]);}
   }
 
@@ -632,9 +664,15 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   }
 
   function resign(){
-    setGStatus("resign");setWinner(pCol==="w"?"Black":"White");setTimerOn(false);
+    const g=gRef.current;
+    // In p2p, whoever's turn it is resigns
+    const resignColor=gameMode==="p2p"?(g?.turn()||"w"):pCol;
+    const w=resignColor==="w"?"Black":"White";
+    setGStatus("resign");setWinner(w);setTimerOn(false);
     play("over");
-    const ns={...stats,l:stats.l+1};setStats(ns);saveProgress(undefined,undefined,undefined,ns);
+    if(gameMode==="ai"){
+      const ns={...stats,l:stats.l+1};setStats(ns);saveProgress(undefined,undefined,undefined,ns);
+    }
   }
 
   function showHint(){
@@ -651,6 +689,14 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   useEffect(()=>{
     if(gStatus==="checkmate"||gStatus==="stalemate"||gStatus==="draw"||gStatus==="resign"){
       const iWon=winner===(pCol==="w"?"White":"Black");
+
+      // ── Elo update (AI mode only)
+      if(gameMode==="ai"){
+        const result=gStatus==="checkmate"?(iWon?1:0):gStatus==="resign"?0:0.5;
+        const newElo=calcNewElo(elo,DIFF_ELO[diff],result);
+        setElo(newElo);
+        saveProgress(undefined,undefined,undefined,undefined,newElo);
+      }
 
       // ── Save game to Supabase
       const result = gStatus==="checkmate" ? (iWon?"win":"loss")
@@ -1225,7 +1271,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
         </div>
         {/* Stats */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:14}}>
-          {[{label:"Wins",val:stats.w,icon:"🏆",c:"#5CB88A"},{label:"Losses",val:stats.l,icon:"💀",c:"#E85555"},{label:"Draws",val:stats.d,icon:"🤝",c:"#F5C842"},{label:"Streak",val:`${streak}🔥`,icon:"🧩",c:"#F08C4A"}].map(s=>(
+          {[{label:"Rating",val:elo,icon:"📈",c:"#534AB7"},{label:"Wins",val:stats.w,icon:"🏆",c:"#5CB88A"},{label:"Losses",val:stats.l,icon:"💀",c:"#E85555"},{label:"Streak",val:`${streak}🔥`,icon:"🧩",c:"#F08C4A"}].map(s=>(
             <div key={s.label} style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",padding:"10px 8px",textAlign:"center"}}>
               <div style={{fontSize:11,color:"var(--color-text-secondary)",marginBottom:4}}>{s.icon} {s.label}</div>
               <div style={{fontSize:20,fontWeight:600,color:s.c}}>{s.val}</div>
@@ -1234,7 +1280,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
         </div>
         {/* Mode cards */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-          {[{id:"play_setup",emoji:"⚔️",title:"Play",desc:"Challenge the AI at 5 difficulty levels",accent:"#4A43A0",sub:`${DIFFS[diff].label} mode`},
+          {[{id:"play_setup",emoji:"⚔️",title:"vs AI",desc:"Challenge the AI at 5 difficulty levels",accent:"#4A43A0",sub:`${DIFFS[diff].label} · ${elo} Elo`},
             {id:"learn",emoji:"🎓",title:"Learn",desc:`${totalL} interactive lessons + AI tutor`,accent:"#0F6E56",sub:`${pct}% complete`}].map(m=>(
             <div key={m.id} onClick={()=>setScreen(m.id)}
               style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-lg)",padding:"1.25rem",cursor:"pointer",transition:"border-color .18s,transform .2s,box-shadow .2s"}}
@@ -1246,6 +1292,18 @@ export default function ChessAcademy({ user = null, onSignOut }) {
               <div style={{fontSize:11,padding:"3px 8px",background:"var(--color-background-secondary)",borderRadius:20,display:"inline-block",color:"var(--color-text-secondary)"}}>{m.sub}</div>
             </div>
           ))}
+        </div>
+        {/* Pass-and-play card */}
+        <div onClick={()=>{setGameMode("p2p");setScreen("play_setup");}}
+          style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-lg)",padding:"1rem 1.25rem",cursor:"pointer",transition:"border-color .18s,transform .2s",display:"flex",alignItems:"center",gap:14,marginBottom:10}}
+          onMouseEnter={e=>{e.currentTarget.style.borderColor="#E67E22";e.currentTarget.style.transform="translateY(-2px)";}}
+          onMouseLeave={e=>{e.currentTarget.style.borderColor="";e.currentTarget.style.transform="";}}>
+          <span style={{fontSize:32}}>👥</span>
+          <div style={{flex:1}}>
+            <div style={{fontSize:16,fontWeight:600,color:"var(--color-text-primary)",marginBottom:3}}>Pass & Play</div>
+            <div style={{fontSize:12,color:"var(--color-text-secondary)"}}>2 players on one device · auto-flip board each turn</div>
+          </div>
+          <span style={{fontSize:12,padding:"3px 9px",background:"rgba(230,126,34,.1)",color:"#E67E22",borderRadius:20,fontWeight:500}}>Local</span>
         </div>
         <div onClick={()=>{randomPuzzle();setScreen("puzzles");}}
           style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-lg)",padding:"1rem 1.25rem",cursor:"pointer",transition:"border-color .18s,transform .2s",display:"flex",alignItems:"center",gap:14,marginBottom:10}}
@@ -1330,35 +1388,70 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   if(screen==="play_setup") return(
     <div style={{padding:"1rem 0 2rem",fontFamily:"var(--font-sans)"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:"1.5rem"}}>
-        <button onClick={()=>setScreen("menu")} style={{fontSize:12,padding:"5px 11px",background:"none",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",cursor:"pointer",color:"var(--color-text-secondary)"}}>← Back</button>
-        <span style={{fontSize:19,fontWeight:600,color:"var(--color-text-primary)"}}>Game Setup</span>
+        <button onClick={()=>{setGameMode("ai");setScreen("menu");}} style={{fontSize:12,padding:"5px 11px",background:"none",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",cursor:"pointer",color:"var(--color-text-secondary)"}}>← Back</button>
+        <span style={{fontSize:19,fontWeight:600,color:"var(--color-text-primary)"}}>{gameMode==="p2p"?"👥 Pass & Play Setup":"⚔️ Game Setup"}</span>
       </div>
-      {/* Difficulty */}
-      <div style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-lg)",padding:"1rem 1.25rem",marginBottom:12}}>
-        <div style={{fontSize:12,fontWeight:500,color:"var(--color-text-secondary)",marginBottom:10,textTransform:"uppercase",letterSpacing:"0.06em"}}>Difficulty</div>
-        {DIFFS.map((d,i)=>(
-          <div key={i} onClick={()=>setDiff(i)} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",borderRadius:"var(--border-radius-md)",background:diff===i?"var(--color-background-secondary)":"transparent",border:diff===i?`1.5px solid ${d.color}`:"0.5px solid transparent",cursor:"pointer",transition:"all .15s",marginBottom:i<4?4:0}}>
-            <div style={{width:10,height:10,borderRadius:"50%",background:d.color,flexShrink:0}}/>
-            <span style={{fontSize:14,fontWeight:diff===i?600:400,color:"var(--color-text-primary)",flex:1}}>{d.label}</span>
-            <span style={{fontSize:12,color:"var(--color-text-secondary)"}}>{d.desc}</span>
-            {diff===i&&<span style={{color:"var(--color-text-success)",fontSize:14}}>✓</span>}
-          </div>
+
+      {/* ── Mode tabs ── */}
+      <div style={{display:"flex",gap:8,marginBottom:16}}>
+        {[["ai","vs AI"],["p2p","Pass & Play"]].map(([m,label])=>(
+          <button key={m} onClick={()=>setGameMode(m)} style={{flex:1,padding:"10px",fontSize:14,fontWeight:600,borderRadius:"var(--border-radius-md)",border:gameMode===m?"2px solid #4A43A0":"0.5px solid var(--color-border-tertiary)",background:gameMode===m?"rgba(74,67,160,.08)":"none",color:gameMode===m?"#4A43A0":"var(--color-text-secondary)",cursor:"pointer",transition:"all .15s"}}>
+            {label}
+          </button>
         ))}
       </div>
-      {/* Color */}
-      <div style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-lg)",padding:"1rem 1.25rem",marginBottom:12}}>
-        <div style={{fontSize:12,fontWeight:500,color:"var(--color-text-secondary)",marginBottom:10,textTransform:"uppercase",letterSpacing:"0.06em"}}>Play As</div>
-        <div style={{display:"flex",gap:10}}>
-          {[["w","♙","White","Move first"],["b","♟","Black","AI moves first"]].map(([col,ico,label,sub])=>(
-            <div key={col} onClick={()=>setPCol(col)} style={{flex:1,padding:"14px 12px",border:pCol===col?"2px solid #4A43A0":"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",cursor:"pointer",textAlign:"center",transition:"border .15s",background:pCol===col?"rgba(74,67,160,.06)":"transparent"}}>
-              <div style={{fontSize:30,marginBottom:7}}>{ico}</div>
-              <div style={{fontSize:14,fontWeight:600,color:"var(--color-text-primary)",marginBottom:3}}>{label}</div>
-              <div style={{fontSize:12,color:"var(--color-text-secondary)"}}>{sub}</div>
+
+      {/* ── AI-mode only: difficulty + color ── */}
+      {gameMode==="ai"&&<>
+        <div style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-lg)",padding:"1rem 1.25rem",marginBottom:12}}>
+          <div style={{fontSize:12,fontWeight:500,color:"var(--color-text-secondary)",marginBottom:10,textTransform:"uppercase",letterSpacing:"0.06em"}}>Difficulty</div>
+          {DIFFS.map((d,i)=>(
+            <div key={i} onClick={()=>setDiff(i)} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",borderRadius:"var(--border-radius-md)",background:diff===i?"var(--color-background-secondary)":"transparent",border:diff===i?`1.5px solid ${d.color}`:"0.5px solid transparent",cursor:"pointer",transition:"all .15s",marginBottom:i<4?4:0}}>
+              <div style={{width:10,height:10,borderRadius:"50%",background:d.color,flexShrink:0}}/>
+              <span style={{fontSize:14,fontWeight:diff===i?600:400,color:"var(--color-text-primary)",flex:1}}>{d.label}</span>
+              <span style={{fontSize:12,color:"var(--color-text-secondary)"}}>{d.desc}</span>
+              <span style={{fontSize:11,color:d.color,fontWeight:600}}>{DIFF_ELO[i]}</span>
+              {diff===i&&<span style={{color:"var(--color-text-success)",fontSize:14}}>✓</span>}
             </div>
           ))}
         </div>
-      </div>
-      {/* Time control */}
+        <div style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-lg)",padding:"1rem 1.25rem",marginBottom:12}}>
+          <div style={{fontSize:12,fontWeight:500,color:"var(--color-text-secondary)",marginBottom:10,textTransform:"uppercase",letterSpacing:"0.06em"}}>Play As</div>
+          <div style={{display:"flex",gap:10}}>
+            {[["w","♙","White","Move first"],["b","♟","Black","AI moves first"]].map(([col,ico,label,sub])=>(
+              <div key={col} onClick={()=>setPCol(col)} style={{flex:1,padding:"14px 12px",border:pCol===col?"2px solid #4A43A0":"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",cursor:"pointer",textAlign:"center",transition:"border .15s",background:pCol===col?"rgba(74,67,160,.06)":"transparent"}}>
+                <div style={{fontSize:30,marginBottom:7}}>{ico}</div>
+                <div style={{fontSize:14,fontWeight:600,color:"var(--color-text-primary)",marginBottom:3}}>{label}</div>
+                <div style={{fontSize:12,color:"var(--color-text-secondary)"}}>{sub}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </>}
+
+      {/* ── P2P-mode only: player names + auto-flip ── */}
+      {gameMode==="p2p"&&<>
+        <div style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-lg)",padding:"1rem 1.25rem",marginBottom:12}}>
+          <div style={{fontSize:12,fontWeight:500,color:"var(--color-text-secondary)",marginBottom:12,textTransform:"uppercase",letterSpacing:"0.06em"}}>Player Names</div>
+          {[["w","♙ White (moves first)"],["b","♟ Black"]].map(([col,label])=>(
+            <div key={col} style={{marginBottom:10}}>
+              <div style={{fontSize:12,color:"var(--color-text-secondary)",marginBottom:5}}>{label}</div>
+              <input value={p2pNames[col]} onChange={e=>setP2pNames(n=>({...n,[col]:e.target.value}))}
+                placeholder={col==="w"?"Player 1":"Player 2"}
+                style={{width:"100%",fontSize:14,padding:"9px 12px",borderRadius:"var(--border-radius-md)",border:"0.5px solid var(--color-border-secondary)",background:"var(--color-background-secondary)",color:"var(--color-text-primary)",outline:"none",boxSizing:"border-box"}}/>
+            </div>
+          ))}
+        </div>
+        <div style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-lg)",padding:"12px 16px",marginBottom:12,display:"flex",alignItems:"center",gap:12}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:14,fontWeight:500,color:"var(--color-text-primary)"}}>Auto-flip board</div>
+            <div style={{fontSize:12,color:"var(--color-text-secondary)",marginTop:2}}>Flip the board after each move so the active player faces their pieces</div>
+          </div>
+          <Toggle val={p2pFlipOnTurn} onChange={setP2pFlipOnTurn}/>
+        </div>
+      </>}
+
+      {/* ── Shared: time control ── */}
       <div style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-lg)",padding:"1rem 1.25rem",marginBottom:16}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
           <div style={{fontSize:12,fontWeight:500,color:"var(--color-text-secondary)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Time Control</div>
@@ -1375,9 +1468,9 @@ export default function ChessAcademy({ user = null, onSignOut }) {
           </div>
         )}
       </div>
-      <button onClick={startGame} style={{width:"100%",padding:13,background:"#4A43A0",color:"#fff",border:"none",borderRadius:"var(--border-radius-md)",fontSize:16,fontWeight:600,cursor:"pointer",transition:"opacity .15s"}}
+      <button onClick={startGame} style={{width:"100%",padding:13,background:gameMode==="p2p"?"#E67E22":"#4A43A0",color:"#fff",border:"none",borderRadius:"var(--border-radius-md)",fontSize:16,fontWeight:600,cursor:"pointer",transition:"opacity .15s"}}
         onMouseEnter={e=>e.currentTarget.style.opacity=".88"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-        Start Game →
+        {gameMode==="p2p"?"Start Pass & Play →":"Start Game →"}
       </button>
     </div>
   );
@@ -1399,37 +1492,62 @@ export default function ChessAcademy({ user = null, onSignOut }) {
         <PromoDlg/>
         {/* Top bar */}
         <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10,flexWrap:"wrap"}}>
-          <button onClick={()=>setScreen("menu")} style={{fontSize:12,padding:"5px 10px",background:"none",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",cursor:"pointer",color:"var(--color-text-secondary)"}}>← Menu</button>
+          <button onClick={()=>{setScreen("menu");setGameMode("ai");}} style={{fontSize:12,padding:"5px 10px",background:"none",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",cursor:"pointer",color:"var(--color-text-secondary)"}}>← Menu</button>
           <div style={{display:"flex",alignItems:"center",gap:5,flex:1}}>
-            <div style={{width:8,height:8,borderRadius:"50%",background:DIFFS[diff].color,flexShrink:0}}/>
-            <span style={{fontSize:12,color:"var(--color-text-secondary)"}}>{DIFFS[diff].label}</span>
+            {gameMode==="p2p"
+              ?<span style={{fontSize:12,color:"#E67E22",fontWeight:600}}>👥 Pass & Play</span>
+              :<><div style={{width:8,height:8,borderRadius:"50%",background:DIFFS[diff].color,flexShrink:0}}/>
+                <span style={{fontSize:12,color:"var(--color-text-secondary)"}}>{DIFFS[diff].label}</span></>
+            }
             {opening&&<span style={{fontSize:11,color:"var(--color-text-tertiary)",borderLeft:"0.5px solid var(--color-border-tertiary)",paddingLeft:6}}>{opening}</span>}
           </div>
-          {aiThink&&<span style={{fontSize:12,color:"var(--color-text-secondary)",fontStyle:"italic"}}>AI thinking…</span>}
+          {gameMode==="p2p"&&gStatus==="playing"&&(
+            <span style={{fontSize:12,fontWeight:600,color:g?.turn()==="w"?"var(--color-text-primary)":"var(--color-text-secondary)",padding:"3px 10px",background:"var(--color-background-secondary)",borderRadius:20}}>
+              {g?.turn()==="w"?`♙ ${p2pNames.w}`:`♟ ${p2pNames.b}`}'s turn
+            </span>
+          )}
+          {gameMode==="ai"&&aiThink&&<span style={{fontSize:12,color:"var(--color-text-secondary)",fontStyle:"italic"}}>AI thinking…</span>}
           {inChk&&gStatus==="playing"&&<span style={{fontSize:12,color:"#E85555",fontWeight:700}}>⚠ Check!</span>}
           <button onClick={()=>setFlipped(f=>!f)} title="Flip board" style={{fontSize:12,padding:"5px 9px",background:"none",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",cursor:"pointer",color:"var(--color-text-secondary)"}}>⟳</button>
         </div>
         {/* Game over */}
-        {gameOver&&(
-          <div style={{marginBottom:12,padding:"12px 16px",borderRadius:"var(--border-radius-md)",background:gStatus==="checkmate"||gStatus==="timeout"?(iWon?"rgba(92,184,138,.12)":"rgba(232,85,85,.12)"):"var(--color-background-secondary)",border:`0.5px solid ${gStatus==="checkmate"||gStatus==="timeout"?(iWon?"#5CB88A":"#E85555"):"var(--color-border-tertiary)"}`,display:"flex",alignItems:"center",gap:12}}>
-            <span style={{fontSize:26}}>{gStatus==="checkmate"?(iWon?"🏆":"💀"):gStatus==="resign"?"🏳":gStatus==="timeout"?"⏰":"🤝"}</span>
+        {gameOver&&(()=>{
+          const eloChange=gameMode==="ai"?(()=>{
+            const r=gStatus==="checkmate"?(iWon?1:0):gStatus==="resign"?0:0.5;
+            return calcNewElo(elo,DIFF_ELO[diff],r)-elo;
+          })():null;
+          const winnerName=gameMode==="p2p"?
+            (winner==="White"?p2pNames.w:p2pNames.b):winner;
+          return(
+          <div style={{marginBottom:12,padding:"12px 16px",borderRadius:"var(--border-radius-md)",background:gStatus==="checkmate"||gStatus==="timeout"?(iWon||gameMode==="p2p"?"rgba(92,184,138,.12)":"rgba(232,85,85,.12)"):"var(--color-background-secondary)",border:`0.5px solid ${gStatus==="checkmate"||gStatus==="timeout"?(iWon||gameMode==="p2p"?"#5CB88A":"#E85555"):"var(--color-border-tertiary)"}`,display:"flex",alignItems:"center",gap:12}}>
+            <span style={{fontSize:26}}>{gStatus==="checkmate"?"🏆":gStatus==="resign"?"🏳":gStatus==="timeout"?"⏰":"🤝"}</span>
             <div style={{flex:1}}>
-              <div style={{fontSize:15,fontWeight:600,color:"var(--color-text-primary)"}}>{gStatus==="checkmate"?`${winner} wins by checkmate!`:gStatus==="stalemate"?"Stalemate — draw!":gStatus==="timeout"?`${winner} wins on time!`:gStatus==="resign"?`${winner} wins — you resigned`:"Draw!"}</div>
-              <div style={{display:"flex",alignItems:"center",gap:10,marginTop:2}}>
-                <span style={{fontSize:12,color:"var(--color-text-secondary)"}}>{hist.length} moves played</span>
+              <div style={{fontSize:15,fontWeight:600,color:"var(--color-text-primary)"}}>
+                {gStatus==="checkmate"?`${winnerName} wins by checkmate!`
+                :gStatus==="stalemate"?"Stalemate — draw!"
+                :gStatus==="timeout"?`${winnerName} wins on time!`
+                :gStatus==="resign"?`${winnerName} wins — opponent resigned`
+                :"Draw!"}
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginTop:2,flexWrap:"wrap"}}>
+                <span style={{fontSize:12,color:"var(--color-text-secondary)"}}>{hist.length} moves</span>
                 {computeAccuracy(moveQualities)!=null&&(()=>{
                   const acc=computeAccuracy(moveQualities);
                   const c=acc>=85?"#5CB88A":acc>=65?"#F5C842":"#E85555";
                   return <span style={{fontSize:12,fontWeight:600,color:c}}>Accuracy: {acc}/100</span>;
                 })()}
+                {eloChange!=null&&<span style={{fontSize:12,fontWeight:600,color:eloChange>=0?"#5CB88A":"#E85555"}}>
+                  {eloChange>=0?`+${eloChange}`:`${eloChange}`} Elo → {elo+(eloChange||0)}
+                </span>}
               </div>
             </div>
             <div style={{display:"flex",gap:6}}>
-              <button onClick={()=>setShareModal(true)} style={{padding:"7px 12px",background:"none",color:"var(--color-text-secondary)",border:"0.5px solid var(--color-border-secondary)",borderRadius:"var(--border-radius-md)",fontSize:13,cursor:"pointer"}}>📤 Share</button>
-              <button onClick={startGame} style={{padding:"7px 16px",background:"#4A43A0",color:"#fff",border:"none",borderRadius:"var(--border-radius-md)",fontSize:13,fontWeight:500,cursor:"pointer"}}>Rematch</button>
+              {gameMode==="ai"&&<button onClick={()=>setShareModal(true)} style={{padding:"7px 12px",background:"none",color:"var(--color-text-secondary)",border:"0.5px solid var(--color-border-secondary)",borderRadius:"var(--border-radius-md)",fontSize:13,cursor:"pointer"}}>📤 Share</button>}
+              <button onClick={startGame} style={{padding:"7px 16px",background:gameMode==="p2p"?"#E67E22":"#4A43A0",color:"#fff",border:"none",borderRadius:"var(--border-radius-md)",fontSize:13,fontWeight:500,cursor:"pointer"}}>Rematch</button>
             </div>
           </div>
-        )}
+          );
+        })()}
         {shareModal&&<ShareModal/>}
         {/* Move quality summary — shown after game ends */}
         {gameOver && moveQualities.length>0 &&(
@@ -1453,11 +1571,13 @@ export default function ChessAcademy({ user = null, onSignOut }) {
         <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
           {/* Board col */}
           <div style={{flexShrink:0}}>
-            {/* Opponent */}
+            {/* Opponent / top player label */}
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5,minHeight:26}}>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
                 <span style={{fontSize:14}}>{pCol==="w"?"♟":"♙"}</span>
-                <span style={{fontSize:13,color:"var(--color-text-secondary)",fontWeight:500}}>AI — {DIFFS[diff].label}</span>
+                <span style={{fontSize:13,color:"var(--color-text-secondary)",fontWeight:500}}>
+                  {gameMode==="p2p"?(flipped?p2pNames.w:p2pNames.b):`AI — ${DIFFS[diff].label}`}
+                </span>
                 <Captured history={hist} forColor={pCol==="w"?"b":"w"}/>
               </div>
               {useTimer&&<div style={{fontSize:14,fontFamily:"monospace",fontWeight:700,color:!isMyTurn?"var(--color-text-primary)":"var(--color-text-tertiary)",background:!isMyTurn&&gStatus==="playing"?"rgba(74,67,160,.12)":"transparent",padding:"3px 8px",borderRadius:"var(--border-radius-md)"}}>{fmtTime(pCol==="w"?timeB:timeW)}</div>}
@@ -1483,13 +1603,15 @@ export default function ChessAcademy({ user = null, onSignOut }) {
                 )}
               </div>
             </div>
-            {/* Player */}
+            {/* Bottom player label */}
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:5,minHeight:26}}>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
                 <span style={{fontSize:14}}>{pCol==="w"?"♙":"♟"}</span>
-                <span style={{fontSize:13,color:"var(--color-text-primary)",fontWeight:500}}>You</span>
+                <span style={{fontSize:13,color:"var(--color-text-primary)",fontWeight:500}}>
+                  {gameMode==="p2p"?(flipped?p2pNames.b:p2pNames.w):"You"}
+                </span>
                 <Captured history={hist} forColor={pCol}/>
-                {gStatus==="playing"&&isMyTurn&&!aiThink&&<span style={{fontSize:11,color:"#5CB88A"}}>● Your turn</span>}
+                {gameMode==="ai"&&gStatus==="playing"&&isMyTurn&&!aiThink&&<span style={{fontSize:11,color:"#5CB88A"}}>● Your turn</span>}
               </div>
               {useTimer&&<div style={{fontSize:14,fontFamily:"monospace",fontWeight:700,color:isMyTurn?"var(--color-text-primary)":"var(--color-text-tertiary)",background:isMyTurn&&gStatus==="playing"?"rgba(74,67,160,.12)":"transparent",padding:"3px 8px",borderRadius:"var(--border-radius-md)"}}>{fmtTime(pCol==="w"?timeW:timeB)}</div>}
             </div>
@@ -1529,7 +1651,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
             {/* Buttons */}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginTop:12}}>
               <button onClick={undoMove} disabled={hist.length<2||gameOver} style={{padding:"8px 0",fontSize:12,background:"none",border:"0.5px solid var(--color-border-secondary)",borderRadius:"var(--border-radius-md)",cursor:hist.length<2||gameOver?"default":"pointer",color:"var(--color-text-secondary)",opacity:hist.length<2||gameOver?0.35:1}}>↩ Undo</button>
-              <button onClick={showHint} disabled={gameOver||aiThink} style={{padding:"8px 0",fontSize:12,background:hintSq?"rgba(74,67,160,.1)":"none",border:`0.5px solid ${hintSq?"#4A43A0":"var(--color-border-secondary)"}`,borderRadius:"var(--border-radius-md)",cursor:"pointer",color:hintSq?"#4A43A0":"var(--color-text-secondary)",opacity:gameOver||aiThink?0.35:1}}>💡 Hint</button>
+              <button onClick={showHint} disabled={gameOver||aiThink||gameMode==="p2p"} style={{padding:"8px 0",fontSize:12,background:hintSq?"rgba(74,67,160,.1)":"none",border:`0.5px solid ${hintSq?"#4A43A0":"var(--color-border-secondary)"}`,borderRadius:"var(--border-radius-md)",cursor:"pointer",color:hintSq?"#4A43A0":"var(--color-text-secondary)",opacity:gameOver||aiThink||gameMode==="p2p"?0.35:1}}>💡 Hint{gameMode==="p2p"?" (AI)":" Hint"}</button>
               <button onClick={resign} disabled={gameOver||hist.length<2} style={{padding:"8px 0",fontSize:12,background:"none",border:"0.5px solid var(--color-border-secondary)",borderRadius:"var(--border-radius-md)",cursor:"pointer",color:"var(--color-text-secondary)",opacity:gameOver||hist.length<2?0.35:1}}>🏳 Resign</button>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginTop:6}}>
@@ -1694,7 +1816,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
             <button onClick={markDone} style={{flex:1,padding:"10px",background:doneLessons.has(curLesson.id)?"var(--color-background-secondary)":"#0F6E56",color:doneLessons.has(curLesson.id)?"var(--color-text-secondary)":"#fff",border:"none",borderRadius:"var(--border-radius-md)",fontSize:13,fontWeight:600,cursor:"pointer"}}>
               {doneLessons.has(curLesson.id)?"✓ Completed":"Mark Complete →"}
             </button>
-            <button onClick={()=>{setDiff(lTrack==="beginner"?0:lTrack==="intermediate"?2:3);startGame();}}
+            <button onClick={()=>{setGameMode("ai");setDiff(lTrack==="beginner"?0:lTrack==="intermediate"?2:3);startGame();}}
               style={{flex:1,padding:"10px",background:"#4A43A0",color:"#fff",border:"none",borderRadius:"var(--border-radius-md)",fontSize:13,fontWeight:600,cursor:"pointer"}}>
               Practice → Play
             </button>
