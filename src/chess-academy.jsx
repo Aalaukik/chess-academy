@@ -1237,6 +1237,111 @@ export default function ChessAcademy({ user = null, onSignOut }) {
     );
   }
   // ════════════════════════════════════════════════════════════════
+  //  BOTTOM NAV BAR
+  // ════════════════════════════════════════════════════════════════
+  const NAV_ITEMS = [
+    { id:"menu",       icon:"⌂",  label:"Home"    },
+    { id:"play_setup", icon:"⚔",  label:"Play"    },
+    { id:"learn",      icon:"🎓", label:"Learn"   },
+    { id:"puzzles",    icon:"🧩", label:"Puzzles" },
+    { id:"profile",    icon:"👤", label:"Profile" },
+  ];
+  const NAV_ACTIVE_MAP = {
+    menu:"menu", settings:"menu",
+    play_setup:"play_setup", play:"play_setup",
+    learn:"learn",
+    puzzles:"puzzles",
+    profile:"profile",
+  };
+  const NAV_SCREENS = new Set(["menu","play_setup","play","learn","puzzles","profile","settings"]);
+
+  function BottomNav(){
+    if(!NAV_SCREENS.has(screen)) return null;
+    // Hide on active game to give max board space
+    if(screen==="play") return null;
+    const active = NAV_ACTIVE_MAP[screen] ?? "menu";
+
+    function go(id){
+      if(id==="menu")       setScreen("menu");
+      else if(id==="play_setup"){ setGameMode("ai"); setScreen("play_setup"); }
+      else if(id==="learn") setScreen("learn");
+      else if(id==="puzzles"){ if(!pz) randomPuzzle(); setScreen("puzzles"); }
+      else if(id==="profile") setScreen("profile");
+    }
+
+    return(
+      <nav style={{
+        position:"fixed", bottom:0, left:0, right:0,
+        height:62, zIndex:200,
+        background:"var(--color-background-primary)",
+        borderTop:"0.5px solid var(--color-border-tertiary)",
+        boxShadow:"0 -4px 24px rgba(0,0,0,.09)",
+        display:"flex", alignItems:"stretch",
+      }}>
+        <div style={{
+          maxWidth:860, margin:"0 auto", width:"100%",
+          display:"flex", padding:"0 4px",
+        }}>
+          {NAV_ITEMS.map(item=>{
+            const isActive = active === item.id;
+            return(
+              <button
+                key={item.id}
+                onClick={()=>go(item.id)}
+                style={{
+                  flex:1, border:"none", background:"none",
+                  display:"flex", flexDirection:"column",
+                  alignItems:"center", justifyContent:"center",
+                  gap:3, cursor:"pointer", padding:"6px 4px",
+                  color: isActive ? "#4A43A0" : "var(--color-text-tertiary)",
+                  transition:"color .15s, transform .12s",
+                  position:"relative",
+                  outline:"none",
+                }}
+                onMouseEnter={e=>{ if(!isActive) e.currentTarget.style.color="var(--color-text-secondary)"; }}
+                onMouseLeave={e=>{ if(!isActive) e.currentTarget.style.color="var(--color-text-tertiary)"; }}
+              >
+                {/* Active indicator pill */}
+                {isActive&&(
+                  <span style={{
+                    position:"absolute", top:0, left:"50%",
+                    transform:"translateX(-50%)",
+                    width:28, height:3, borderRadius:"0 0 4px 4px",
+                    background:"#4A43A0",
+                    animation:"navPillIn .2s ease forwards",
+                  }}/>
+                )}
+                {/* Active background blob */}
+                {isActive&&(
+                  <span style={{
+                    position:"absolute",
+                    width:44, height:32, borderRadius:10,
+                    background:"rgba(74,67,160,.1)",
+                    top:"50%", left:"50%",
+                    transform:"translate(-50%,-58%)",
+                    pointerEvents:"none",
+                  }}/>
+                )}
+                <span style={{
+                  fontSize:20, lineHeight:1, position:"relative",
+                  transform: isActive ? "translateY(-1px) scale(1.08)" : "none",
+                  transition:"transform .15s",
+                }}>{item.icon}</span>
+                <span style={{
+                  fontSize:10,
+                  fontWeight: isActive ? 600 : 400,
+                  letterSpacing: 0.2,
+                  position:"relative",
+                }}>{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════════
   if(!loaded) return(
     <div style={{minHeight:500,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,fontFamily:"var(--font-sans)"}}>
       <style>{`@keyframes bob{0%,100%{transform:scale(1) rotate(-5deg)}50%{transform:scale(1.1) rotate(5deg)}}`}</style>
@@ -1252,7 +1357,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
     const totalL=LESSONS.length;
     const pct=Math.round((doneLessons.size/totalL)*100);
     return(
-      <div style={{padding:"1rem 0 2rem",fontFamily:"var(--font-sans)"}} className="screen-enter">
+      <><div style={{padding:"1rem 0 5.5rem",fontFamily:"var(--font-sans)"}} className="screen-enter">
         <style>{`@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}`}</style>
         {/* Profile button top-right */}
         <div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}>
@@ -1333,7 +1438,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
             ))}
           </div>
         </div>
-      </div>
+      </div><BottomNav/></>
     );
   }
 
@@ -1341,7 +1446,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   //  PROFILE
   // ════════════════════════════════════════════════════════════════
   if(screen==="profile") return(
-    <ProfileScreen
+    <><div style={{paddingBottom:"4rem"}}><ProfileScreen
       user={user}
       stats={stats}
       doneLessons={doneLessons}
@@ -1349,14 +1454,13 @@ export default function ChessAcademy({ user = null, onSignOut }) {
       streak={streak}
       onBack={()=>setScreen("menu")}
       onSignOut={onSignOut}
-    />
-  );
+    /></div><BottomNav/></>;
 
   // ════════════════════════════════════════════════════════════════
   //  SETTINGS
   // ════════════════════════════════════════════════════════════════
   if(screen==="settings") return(
-    <div style={{padding:"1rem 0 2rem",fontFamily:"var(--font-sans)"}}>
+    <><div style={{padding:"1rem 0 5.5rem",fontFamily:"var(--font-sans)"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:"1.5rem"}}>
         <button onClick={()=>setScreen("menu")} style={{fontSize:12,padding:"5px 11px",background:"none",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",cursor:"pointer",color:"var(--color-text-secondary)"}}>← Back</button>
         <span style={{fontSize:19,fontWeight:600,color:"var(--color-text-primary)"}}>Settings</span>
@@ -1379,14 +1483,13 @@ export default function ChessAcademy({ user = null, onSignOut }) {
         style={{width:"100%",padding:10,background:"none",color:"#E85555",border:"1px solid #E85555",borderRadius:"var(--border-radius-md)",fontSize:14,cursor:"pointer",marginTop:8}}>
         Reset All Progress
       </button>
-    </div>
-  );
+    </div><BottomNav/></>;
 
   // ════════════════════════════════════════════════════════════════
   //  PLAY SETUP
   // ════════════════════════════════════════════════════════════════
   if(screen==="play_setup") return(
-    <div style={{padding:"1rem 0 2rem",fontFamily:"var(--font-sans)"}}>
+    <><div style={{padding:"1rem 0 5.5rem",fontFamily:"var(--font-sans)"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:"1.5rem"}}>
         <button onClick={()=>{setGameMode("ai");setScreen("menu");}} style={{fontSize:12,padding:"5px 11px",background:"none",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",cursor:"pointer",color:"var(--color-text-secondary)"}}>← Back</button>
         <span style={{fontSize:19,fontWeight:600,color:"var(--color-text-primary)"}}>{gameMode==="p2p"?"👥 Pass & Play Setup":"⚔️ Game Setup"}</span>
@@ -1472,8 +1575,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
         onMouseEnter={e=>e.currentTarget.style.opacity=".88"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
         {gameMode==="p2p"?"Start Pass & Play →":"Start Game →"}
       </button>
-    </div>
-  );
+    </div><BottomNav/></>;
 
   // ════════════════════════════════════════════════════════════════
   //  PLAY
@@ -1680,7 +1782,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   if(screen==="puzzles"){
     const cats=["All",...new Set(PUZZLES.map(p=>p.cat))];
     return(
-      <div style={{padding:"0.5rem 0 1rem",fontFamily:"var(--font-sans)"}}>
+      <><div style={{padding:"0.5rem 0 5rem",fontFamily:"var(--font-sans)"}}>
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
           <button onClick={()=>setScreen("menu")} style={{fontSize:12,padding:"5px 10px",background:"none",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",cursor:"pointer",color:"var(--color-text-secondary)"}}>← Menu</button>
           <span style={{fontSize:18,fontWeight:600,color:"var(--color-text-primary)",flex:1}}>🧩 Puzzle Trainer</span>
@@ -1754,8 +1856,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
             </div>
           </div>
         )}
-      </div>
-    );
+      </div></div><BottomNav/></>;
   }
 
   // ════════════════════════════════════════════════════════════════
@@ -1763,7 +1864,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   // ════════════════════════════════════════════════════════════════
   const pct=Math.round((doneLessons.size/LESSONS.length)*100);
   return(
-    <div style={{padding:"0.5rem 0 1rem",fontFamily:"var(--font-sans)"}}>
+    <><div style={{padding:"0.5rem 0 5rem",fontFamily:"var(--font-sans)"}}>
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,flexWrap:"wrap"}}>
         <button onClick={()=>setScreen("menu")} style={{fontSize:12,padding:"5px 10px",background:"none",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",cursor:"pointer",color:"var(--color-text-secondary)",flexShrink:0}}>← Menu</button>
         <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
@@ -1841,6 +1942,5 @@ export default function ChessAcademy({ user = null, onSignOut }) {
           </div>
         </div>
       </div>
-    </div>
-  );
+    </div><BottomNav/></>;
 }

@@ -382,3 +382,17 @@ button:active { transform: scale(.97) !important; }
   80%  { transform: scale(0.96); }
   100% { opacity: 1; transform: scale(1); }
 }
+
+/* ── Bottom Nav Bar ── */
+@keyframes navPillIn {
+  from { width: 0; opacity: 0; }
+  to   { width: 28px; opacity: 1; }
+}
+
+/* Safe area inset for iPhone home indicator */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  nav[style*="position:fixed"][style*="bottom:0"],
+  nav[style*="position: fixed"][style*="bottom: 0"] {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
