@@ -16,11 +16,13 @@ export function useSupabaseProgress({
   setSolvedPz,
   setStreak,
   setStats,
+  setElo,
   // current state (for saves)
   doneLessons,
   solvedPz,
   streak,
   stats,
+  elo,
 }) {
   const saveTimerRef = useRef(null)
 
@@ -41,6 +43,7 @@ export function useSupabaseProgress({
       if (data.solved_puzzles?.length)    setSolvedPz(new Set(data.solved_puzzles))
       if (data.puzzle_streak != null)     setStreak(data.puzzle_streak)
       if (data.wins != null)              setStats({ w: data.wins, l: data.losses, d: data.draws })
+      if (data.elo != null)               setElo(data.elo)
     }
 
     loadProgress()
@@ -59,6 +62,7 @@ export function useSupabaseProgress({
         wins:              stats.w,
         losses:            stats.l,
         draws:             stats.d,
+        elo,
         updated_at:        new Date().toISOString(),
       }).then(({ error }) => {
         if (error) console.error('[progress save]', error.message)
@@ -66,7 +70,7 @@ export function useSupabaseProgress({
     }, 1500)
 
     return () => clearTimeout(saveTimerRef.current)
-  }, [doneLessons, solvedPz, streak, stats, user?.id])
+  }, [doneLessons, solvedPz, streak, stats, elo, user?.id])
 
   // ── Save a completed game session ─────────────────────────────
   async function saveGame({ result, playerColor, difficulty, moves, opening, durationS }) {

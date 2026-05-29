@@ -335,8 +335,8 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   const gameStartTime = useRef(null);
   const { saveGame } = useSupabaseProgress({
     user,
-    setDoneLessons, setSolvedPz, setStreak, setStats,
-    doneLessons, solvedPz, streak, stats,
+    setDoneLessons, setSolvedPz, setStreak, setStats, setElo,
+    doneLessons, solvedPz, streak, stats, elo,
   });
 
   function play(k){if(soundOn) SND[k]?.();}
