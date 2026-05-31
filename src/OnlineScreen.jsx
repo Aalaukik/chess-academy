@@ -280,7 +280,7 @@ export default function OnlineScreen({ user, onJoinGame, onBack }) {
   }
 
   // ── Common: join a game row as black ─────────────────────────
-  // Returns true if successful, false on race-condition failure.
+  // Returns true if successful, false on any failure.
   async function joinGameRow(game) {
     const { data: updated, error: joinErr } = await supabase
       .from('multiplayer_games')
@@ -290,18 +290,42 @@ export default function OnlineScreen({ user, onJoinGame, onBack }) {
         status:     'active',
       })
       .eq('id', game.id)
-      .eq('status', 'waiting')     // race-condition guard
+      .eq('status', 'waiting')    // race-condition guard — only joins truly open games
       .select()
-      .maybeSingle()    // ← returns null (not 406) if status changed before we got here
+      .maybeSingle()    // returns null (not 406) if 0 rows matched
 
     if (joinErr) {
+      // Surface the real Supabase/PostgREST error — most likely an RLS policy issue.
+      // If you see "0 rows" here it means the UPDATE policy needs fixing in Supabase.
+      console.error('[joinGameRow]', joinErr)
       setError(`Join failed: ${joinErr.message}`)
       return false
     }
+
     if (!updated) {
-      // Row was updated by someone else between our read and write — a race
+      // UPDATE matched 0 rows — two possible reasons:
+      //  1. Race condition: someone else joined between our SELECT and UPDATE
+      //  2. RLS blocked the UPDATE silently (black_id was NULL so policy failed)
+      // Either way, re-fetch the current state so we can give the right message.
+      const { data: current } = await supabase
+        .from('multiplayer_games')
+        .select('*')
+        .eq('id', game.id)
+        .maybeSingle()
+
+      if (current?.status === 'active' && current?.black_id === user.id) {
+        // We ARE already black — a previous click succeeded, just navigate
+        onJoinGame({ game: current, myColor: 'b' })
+        return true
+      }
+      if (current?.status === 'active') {
+        setError('Someone else joined this game a moment ago. Try Quick Match or ask for a new code.')
+      } else {
+        setError('Could not join — the game may not be open. If this keeps happening, ask the creator to check their Supabase RLS policy.')
+      }
       return false
     }
+
     onJoinGame({ game: updated, myColor: 'b' })
     return true
   }
