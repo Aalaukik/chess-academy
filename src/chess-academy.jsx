@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useSupabaseProgress } from "./useSupabaseProgress";
 import ProfileScreen from "./ProfileScreen";
+import OnlineScreen from "./OnlineScreen";
+import OnlinePlayScreen from "./OnlinePlayScreen";
 
 // ════════════════════════════════════════════════════════════════
 //  1. CHESS AI — Minimax + Alpha-Beta Pruning
@@ -260,6 +262,9 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   const [gameMode,setGameMode]=useState("ai"); // "ai" | "p2p"
   const [p2pNames,setP2pNames]=useState({w:"White",b:"Black"});
   const [p2pFlipOnTurn,setP2pFlipOnTurn]=useState(true); // auto-flip board each turn
+
+  // ── online multiplayer
+  const [onlineGameData,setOnlineGameData]=useState(null); // { game, myColor }
 
   // ── learn
   const [lTrack,setLTrack]=useState("beginner");
@@ -1243,6 +1248,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   const NAV_ITEMS = [
     { id:"menu",       icon:"⌂",  label:"Home"    },
     { id:"play_setup", icon:"⚔",  label:"Play"    },
+    { id:"online",     icon:"🌐", label:"Online"  },
     { id:"learn",      icon:"🎓", label:"Learn"   },
     { id:"puzzles",    icon:"🧩", label:"Puzzles" },
     { id:"profile",    icon:"👤", label:"Profile" },
@@ -1250,19 +1256,22 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   const NAV_ACTIVE_MAP = {
     menu:"menu", settings:"menu",
     play_setup:"play_setup", play:"play_setup",
+    online:"online", online_play:"online",
     learn:"learn",
     puzzles:"puzzles",
     profile:"profile",
   };
-  const NAV_SCREENS = new Set(["menu","play_setup","play","learn","puzzles","profile","settings"]);
+  const NAV_SCREENS = new Set(["menu","play_setup","play","learn","puzzles","profile","settings","online","online_play"]);
 
   function BottomNav(){
     if(!NAV_SCREENS.has(screen)) return null;
     if(screen==="play") return null;
+    if(screen==="online_play") return null;
     const active = NAV_ACTIVE_MAP[screen] ?? "menu";
     function go(id){
       if(id==="menu")         setScreen("menu");
       else if(id==="play_setup"){ setGameMode("ai"); setScreen("play_setup"); }
+      else if(id==="online")  setScreen("online");
       else if(id==="learn")   setScreen("learn");
       else if(id==="puzzles"){ if(!pz) randomPuzzle(); setScreen("puzzles"); }
       else if(id==="profile") setScreen("profile");
@@ -1377,6 +1386,18 @@ export default function ChessAcademy({ user = null, onSignOut }) {
             </div>
           ))}
         </div>
+        {/* Online multiplayer card */}
+        <div onClick={()=>setScreen("online")}
+          style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-lg)",padding:"1rem 1.25rem",cursor:"pointer",transition:"border-color .18s,transform .2s",display:"flex",alignItems:"center",gap:14,marginBottom:10}}
+          onMouseEnter={e=>{e.currentTarget.style.borderColor="#4A43A0";e.currentTarget.style.transform="translateY(-2px)";}}
+          onMouseLeave={e=>{e.currentTarget.style.borderColor="";e.currentTarget.style.transform="";}}>
+          <span style={{fontSize:32}}>🌐</span>
+          <div style={{flex:1}}>
+            <div style={{fontSize:16,fontWeight:600,color:"var(--color-text-primary)",marginBottom:3}}>Play Online</div>
+            <div style={{fontSize:12,color:"var(--color-text-secondary)"}}>Real-time games against friends · invite code or quick match</div>
+          </div>
+          <span style={{fontSize:12,padding:"3px 9px",background:"rgba(74,67,160,.1)",color:"#4A43A0",borderRadius:20,fontWeight:500}}>Live</span>
+        </div>
         {/* Pass-and-play card */}
         <div onClick={()=>{setGameMode("p2p");setScreen("play_setup");}}
           style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-lg)",padding:"1rem 1.25rem",cursor:"pointer",transition:"border-color .18s,transform .2s",display:"flex",alignItems:"center",gap:14,marginBottom:10}}
@@ -1422,6 +1443,36 @@ export default function ChessAcademy({ user = null, onSignOut }) {
       </>
     );
   }
+
+  // ════════════════════════════════════════════════════════════════
+  //  ONLINE LOBBY
+  // ════════════════════════════════════════════════════════════════
+  if(screen==="online") return(
+    <>
+      <OnlineScreen
+        user={user}
+        onBack={()=>setScreen("menu")}
+        onJoinGame={(gameData)=>{setOnlineGameData(gameData);setScreen("online_play");}}
+      />
+      <BottomNav/>
+    </>
+  );
+
+  // ════════════════════════════════════════════════════════════════
+  //  ONLINE PLAY
+  // ════════════════════════════════════════════════════════════════
+  if(screen==="online_play"&&onlineGameData) return(
+    <OnlinePlayScreen
+      gameData={onlineGameData}
+      user={user}
+      onBack={()=>setScreen("online")}
+      ChessLib={ChessLib}
+      loaded={loaded}
+      theme={theme}
+      showCoords={showCoords}
+      soundOn={soundOn}
+    />
+  );
 
   // ════════════════════════════════════════════════════════════════
   //  PROFILE
