@@ -297,11 +297,10 @@ export default function ChessAcademy({ user = null, onSignOut }) {
   const gRef=useRef(null);
 
   // ── Drag-and-drop
-  const dragRef=useRef(null);           // {from, boardEl, noFlip}
+  const dragRef=useRef(null);           // {from, startX, startY, moved, boardEl, dropHandler, isFlipped}
   const dragJustMoved=useRef(false);    // absorb the click that fires after a drag
   const dragHandlersRef=useRef({});     // always-current handler refs for window listeners
   const [ghostState,setGhostState]=useState(null); // {x,y,pk,isW} — floating piece
-  const playBoardRef=useRef(null);      // stable ref to the play board DOM node
 
   // ── Share result card
   const [shareModal,setShareModal]=useState(false);
@@ -410,24 +409,122 @@ export default function ChessAcademy({ user = null, onSignOut }) {
     return `${String.fromCharCode(97+bCol)}${8-bRow}`;
   }
 
-  // ── Drag start (mousedown / touchstart on a piece) ────────────
-  function startDrag(e, sq){
+  // ── Generic drag start — shared by all boards ────────────────
+  // dropHandler(from, to) is called on drag-end with source + target squares.
+  // isFlipped tells getSqFromPos how to map pixel → square for this board.
+  function startGenericDrag(e, sq, piece, dropHandler, isFlipped=false){
+    if(e.touches) e.preventDefault();
+    const clientX=e.touches?e.touches[0].clientX:e.clientX;
+    const clientY=e.touches?e.touches[0].clientY:e.clientY;
+    // Walk up DOM to find the board container tagged with data-chess-board
+    let el=e.target;
+    while(el&&el.getAttribute?.("data-chess-board")!=="1") el=el.parentElement;
+    dragRef.current={from:sq, startX:clientX, startY:clientY, moved:false, boardEl:el, dropHandler, isFlipped};
+    const pk=`${piece.color}${piece.type.toUpperCase()}`;
+    setGhostState({x:clientX, y:clientY, pk, isW:piece.color==="w"});
+  }
+
+  // ── Play board drag start ─────────────────────────────────────
+  function playDragStart(e, sq){
     const g=gRef.current;
     if(!g||gStatus!=="playing"||aiThink||promoDialog) return;
     const piece=g.get(sq);
     const activeTurn=g.turn();
     const canDrag=gameMode==="p2p"?piece&&piece.color===activeTurn:piece&&piece.color===pCol;
     if(!canDrag) return;
-    // Only prevent default for touch (prevents scroll); mouse clicks still fire normally
-    if(e.touches) e.preventDefault();
-    const clientX=e.touches?e.touches[0].clientX:e.clientX;
-    const clientY=e.touches?e.touches[0].clientY:e.clientY;
-    // Store drag origin for distance check (distinguish click vs drag)
-    dragRef.current={from:sq, startX:clientX, startY:clientY, moved:false};
-    const pk=`${piece.color}${piece.type.toUpperCase()}`;
-    setGhostState({x:clientX, y:clientY, pk, isW:piece.color==="w"});
     setSel(sq);
-    setLegal(g.moves({square:sq,verbose:true}).map(m=>m.to));
+    const legalMoves=g.moves({square:sq,verbose:true}).map(m=>m.to);
+    setLegal(legalMoves);
+    const dropHandler=(from,to)=>{
+      const g2=gRef.current;
+      if(!g2||gStatus!=="playing"||aiThink){setSel(null);setLegal([]);return;}
+      const turn=g2.turn();
+      if(gameMode==="ai"&&turn!==pCol){setSel(null);setLegal([]);return;}
+      const lm=g2.moves({square:from,verbose:true}).map(m=>m.to);
+      if(!lm.includes(to)){setSel(null);setLegal([]);return;}
+      const p=g2.get(from);
+      const isPromo=p?.type==="p"&&((turn==="w"&&to[1]==="8")||(turn==="b"&&to[1]==="1"));
+      if(isPromo){preMoveEval.current=evalPos(g2);setPromoDialog({from,to});setSel(null);setLegal([]);return;}
+      const evalBefore=evalPos(g2);
+      const r=g2.move({from,to,promotion:"q"});
+      if(r){
+        const evalAfter=evalPos(g2);
+        const badge=classifyMove(evalBefore,evalAfter,turn);
+        setMoveQualities(q=>[...q,badge]);setLastBadge(badge);
+        setTimeout(()=>setLastBadge(null),2200);
+        setLastMv({from:r.from,to:r.to});setSel(null);setLegal([]);setHintSq(null);
+        if(r.captured) play("capture");
+        else if(r.flags.includes("k")||r.flags.includes("q")) play("castle");
+        else play("move");
+        if(g2.inCheck()) play("check");
+        syncGame(g2);
+        if(gameMode==="ai"){
+          const aiC=pCol==="w"?"b":"w";
+          if(!g2.isGameOver()&&g2.turn()===aiC) setTimeout(()=>runAI(g2),300);
+        }
+      } else {setSel(null);setLegal([]);}
+    };
+    startGenericDrag(e,sq,piece,dropHandler,flippedRef.current);
+  }
+
+  // ── Learn board drag start — any piece is movable ────────────
+  function learnDragStart(e, sq){
+    const g=lgRef.current;
+    if(!g) return;
+    const piece=g.get(sq);
+    if(!piece) return;
+    const legalMoves=g.moves({square:sq,verbose:true}).map(m=>m.to);
+    setLSel(sq);setLLegal(legalMoves);
+    const dropHandler=(from,to)=>{
+      const g2=lgRef.current;if(!g2) return;
+      const lm=g2.moves({square:from,verbose:true}).map(m=>m.to);
+      if(!lm.includes(to)){setLSel(null);setLLegal([]);return;}
+      const r=g2.move({from,to,promotion:"q"});
+      if(r){setLBoard([...g2.board()]);setLSel(null);setLLegal([]);}
+      else{setLSel(null);setLLegal([]);}
+    };
+    startGenericDrag(e,sq,piece,dropHandler,false);
+  }
+
+  // ── Puzzle board drag start — only current-turn pieces ───────
+  function pzDragStart(e, sq){
+    const g=pzRef.current;
+    if(!g||!pz||pzStatus==="solved"||pzStatus==="wrong") return;
+    const piece=g.get(sq);
+    if(!piece||piece.color!==g.turn()) return;
+    const legalMoves=g.moves({square:sq,verbose:true}).map(m=>m.to);
+    setPzSel(sq);setPzLegal(legalMoves);
+    const dropHandler=(from,to)=>{
+      const g2=pzRef.current;if(!g2||!pz) return;
+      const lm=g2.moves({square:from,verbose:true}).map(m=>m.to);
+      if(!lm.includes(to)){setPzSel(null);setPzLegal([]);return;}
+      const expected=pz.sol[pzMvIdx];
+      const r=g2.move({from,to,promotion:"q"});
+      if(!r){setPzSel(null);setPzLegal([]);return;}
+      setPzLastMv({from:r.from,to:r.to});setPzBoard([...g2.board()]);setPzSel(null);setPzLegal([]);
+      if(r.san===expected||r.from+r.to===expected||r.from+r.to+(r.promotion||"")===expected){
+        const next=pzMvIdx+1;
+        if(next>=pz.sol.length){
+          setPzStatus("solved");play("pzOk");
+          const sk=streak+1;setStreak(sk);
+          const ns=new Set(solvedPz);ns.add(pz.id);setSolvedPz(ns);
+          saveProgress(undefined,ns,sk,undefined);
+        } else {
+          setPzMvIdx(next);setPzStatus("correct");play("move");
+          if(pz.sol[next]){
+            setTimeout(()=>{
+              const opp=g2.move(pz.sol[next]);
+              if(opp){setPzLastMv({from:opp.from,to:opp.to});setPzBoard([...g2.board()]);setPzMvIdx(next+1);setPzStatus("idle");}
+            },600);
+          }
+        }
+      } else {
+        g2.undo();setPzBoard([...g2.board()]);setPzLastMv(null);
+        setPzStatus("wrong");play("pzFail");
+        const sk=0;setStreak(sk);saveProgress(undefined,undefined,sk,undefined);
+      }
+    };
+    startGenericDrag(e,sq,piece,dropHandler,false);
   }
 
   // ── Drag move ─────────────────────────────────────────────────
@@ -445,10 +542,10 @@ export default function ChessAcademy({ user = null, onSignOut }) {
     setGhostState(s=>s?{...s,x:clientX,y:clientY}:null);
   }
 
-  // ── Drag end — execute move if dropped on a legal square ──────
+  // ── Drag end — execute move via the stored dropHandler ───────
   function onDragEnd(e){
     if(!dragRef.current) return;
-    const {from, moved}=dragRef.current;
+    const {from, moved, boardEl, dropHandler, isFlipped}=dragRef.current;
     dragRef.current=null;
     setGhostState(null);
 
@@ -462,44 +559,12 @@ export default function ChessAcademy({ user = null, onSignOut }) {
     const clientX=e.changedTouches?e.changedTouches[0].clientX:e.clientX;
     const clientY=e.changedTouches?e.changedTouches[0].clientY:e.clientY;
 
-    // Use the stable parent-level ref — never stale
-    const boardEl=playBoardRef.current;
     if(!boardEl){setSel(null);setLegal([]);return;}
     const rect=boardEl.getBoundingClientRect();
-    const fl=flippedRef.current;
-    const to=getSqFromPos(clientX,clientY,rect,fl);
+    const to=getSqFromPos(clientX,clientY,rect,isFlipped);
 
     if(!to||to===from){setSel(null);setLegal([]);return;}
-    const g=gRef.current;
-    if(!g||gStatus!=="playing"||aiThink) return;
-    const activeTurn=g.turn();
-    if(gameMode==="ai"&&activeTurn!==pCol){setSel(null);setLegal([]);return;}
-    const legalMoves=g.moves({square:from,verbose:true}).map(m=>m.to);
-    if(!legalMoves.includes(to)){setSel(null);setLegal([]);return;}
-
-    const piece=g.get(from);
-    const isPromo=piece?.type==="p"&&((activeTurn==="w"&&to[1]==="8")||(activeTurn==="b"&&to[1]==="1"));
-    if(isPromo){preMoveEval.current=evalPos(g);setPromoDialog({from,to});setSel(null);setLegal([]);return;}
-
-    const evalBefore=evalPos(g);
-    const r=g.move({from,to,promotion:"q"});
-    if(r){
-      const evalAfter=evalPos(g);
-      const badge=classifyMove(evalBefore,evalAfter,activeTurn);
-      setMoveQualities(q=>[...q,badge]);
-      setLastBadge(badge);
-      setTimeout(()=>setLastBadge(null),2200);
-      setLastMv({from:r.from,to:r.to});setSel(null);setLegal([]);setHintSq(null);
-      if(r.captured) play("capture");
-      else if(r.flags.includes("k")||r.flags.includes("q")) play("castle");
-      else play("move");
-      if(g.inCheck()) play("check");
-      syncGame(g);
-      if(gameMode==="ai"){
-        const aiC=pCol==="w"?"b":"w";
-        if(!g.isGameOver()&&g.turn()===aiC) setTimeout(()=>runAI(g),300);
-      }
-    } else {setSel(null);setLegal([]);}
+    dropHandler?.(from,to);
   }
 
   // ── Share card helpers ────────────────────────────────────────
@@ -971,7 +1036,8 @@ export default function ChessAcademy({ user = null, onSignOut }) {
     const isPlayBoard=!noFlip;
     const isMyTurnNow=gRef.current?.turn()===pCol;
     return(
-      <div style={{display:"inline-flex",flexDirection:"column",borderRadius:6,overflow:"hidden",
+      <div data-chess-board="1"
+        style={{display:"inline-flex",flexDirection:"column",borderRadius:6,overflow:"hidden",
         boxShadow:"0 20px 60px rgba(0,0,0,.55),0 3px 10px rgba(0,0,0,.4)",
         border:`2px solid ${t.bdr}`,
         outline: isPlayBoard && gStatus==="playing"
@@ -1007,7 +1073,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
                 return(
                   <div key={ci} onClick={()=>onSq(sq)}
                     className="board-sq"
-                    style={{width:sz,height:sz,background:bg,cursor:piece&&piece.color===pCol?"grab":"pointer",
+                    style={{width:sz,height:sz,background:bg,cursor:onPieceDragStart&&piece?"grab":"pointer",
                       display:"flex",alignItems:"center",justifyContent:"center",
                       position:"relative",transition:"background .08s",
                       outline:isSel?"2.5px solid rgba(255,255,0,.95)":isHint?"2.5px solid rgba(80,200,80,.95)":"none",
@@ -1026,7 +1092,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
                         textShadow:isW?"0 0 6px #000,0 2px 8px rgba(0,0,0,.95),0 0 2px #222":"0 0 3px rgba(255,255,255,.25),0 1px 5px rgba(0,0,0,.5)",
                         position:"relative",zIndex:1,
                         opacity:isBeingDragged?0:1,
-                        cursor:piece.color===pCol?"grab":"default",
+                        cursor:onPieceDragStart?"grab":"default",
                         transition:"opacity .05s",
                         WebkitUserSelect:"none",
                         touchAction:"none",
@@ -1751,8 +1817,8 @@ export default function ChessAcademy({ user = null, onSignOut }) {
               <div style={{width:8,height:SQ*8+(showCoords?22:0),background:"var(--color-border-tertiary)",borderRadius:4,overflow:"hidden",flexShrink:0,display:"flex",flexDirection:"column-reverse"}}>
                 <div style={{height:`${evalBar}%`,background:"#fff",transition:"height .7s ease",borderRadius:4}}/>
               </div>
-              <div style={{position:"relative"}} ref={playBoardRef}>
-                <Board brd={board} onSq={handleSqClick} selSq={sel} legalSqs={legal} lastMove={lastMv} chkSq={chkSq} hintSq2={hintSq} showGlow={true} myTurn={isMyTurn} onPieceDragStart={startDrag}/>
+              <div style={{position:"relative"}}>
+                <Board brd={board} onSq={handleSqClick} selSq={sel} legalSqs={legal} lastMove={lastMv} chkSq={chkSq} hintSq2={hintSq} showGlow={true} myTurn={isMyTurn} onPieceDragStart={playDragStart}/>
                 {lastBadge&&(
                   <div style={{position:"absolute",top:-14,right:-10,zIndex:10,
                     background:lastBadge.bg,
@@ -1871,7 +1937,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
         ):(
           <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
             <div style={{flexShrink:0}}>
-              <Board brd={pzBoard} onSq={handlePzClick} selSq={pzSel} legalSqs={pzLegal} lastMove={pzLastMv} noFlip={true}/>
+              <Board brd={pzBoard} onSq={handlePzClick} selSq={pzSel} legalSqs={pzLegal} lastMove={pzLastMv} noFlip={true} onPieceDragStart={pzDragStart}/>
               <div style={{marginTop:8,display:"flex",gap:6}}>
                 <button onClick={()=>randomPuzzle()} style={{flex:1,padding:"7px",fontSize:12,background:"none",border:"0.5px solid var(--color-border-secondary)",borderRadius:"var(--border-radius-md)",cursor:"pointer",color:"var(--color-text-secondary)"}}>↺ Next</button>
                 <button onClick={()=>setPzHint(true)} disabled={pzHint} style={{flex:1,padding:"7px",fontSize:12,background:"none",border:"0.5px solid var(--color-border-secondary)",borderRadius:"var(--border-radius-md)",cursor:"pointer",color:"var(--color-text-secondary)",opacity:pzHint?0.4:1}}>💡 Hint</button>
@@ -1945,7 +2011,7 @@ export default function ChessAcademy({ user = null, onSignOut }) {
         {/* Board */}
         <div style={{flexShrink:0}}>
           <div style={{fontSize:11,color:"var(--color-text-secondary)",marginBottom:6}}>Interactive — try moving pieces</div>
-          <Board brd={lBoard} onSq={handleLClick} selSq={lSel} legalSqs={lLegal} lastMove={null} noFlip={true}/>
+          <Board brd={lBoard} onSq={handleLClick} selSq={lSel} legalSqs={lLegal} lastMove={null} noFlip={true} onPieceDragStart={learnDragStart}/>
           <button onClick={()=>loadLesson(curLesson)} style={{marginTop:7,width:"100%",padding:"6px 0",fontSize:12,background:"none",border:"0.5px solid var(--color-border-tertiary)",borderRadius:"var(--border-radius-md)",cursor:"pointer",color:"var(--color-text-secondary)"}}>↺ Reset position</button>
         </div>
         {/* Content */}

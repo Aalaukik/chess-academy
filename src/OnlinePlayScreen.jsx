@@ -39,13 +39,14 @@ const SND = mkSound()
 // ════════════════════════════════════════════════════════════════
 //  BOARD COMPONENT  (self-contained, accepts all config via props)
 // ════════════════════════════════════════════════════════════════
-function Board({ brd, onSq, selSq, legalSqs=[], lastMove=null, chkSq=null, flipped=false, theme='walnut', showCoords=true, isMyTurn=false, gameOver=false }) {
+function Board({ brd, onSq, selSq, legalSqs=[], lastMove=null, chkSq=null, flipped=false, theme='walnut', showCoords=true, isMyTurn=false, gameOver=false, onPieceDragStart=null }) {
   const t   = THEMES[theme] ?? THEMES.walnut
   const fl  = flipped
   const rows = fl ? [...brd].reverse() : brd
 
   return (
-    <div style={{
+    <div data-chess-board="1"
+      style={{
       display:'inline-flex', flexDirection:'column', borderRadius:6, overflow:'hidden',
       boxShadow:'0 20px 60px rgba(0,0,0,.55),0 3px 10px rgba(0,0,0,.4)',
       border:`2px solid ${t.bdr}`,
@@ -84,7 +85,7 @@ function Board({ brd, onSq, selSq, legalSqs=[], lastMove=null, chkSq=null, flipp
                   className="board-sq"
                   style={{
                     width:SQ, height:SQ, background:bg,
-                    cursor: piece ? 'pointer' : 'default',
+                    cursor: onPieceDragStart && piece ? 'grab' : 'pointer',
                     display:'flex', alignItems:'center', justifyContent:'center',
                     position:'relative', transition:'background .08s',
                     outline: isSel ? '2.5px solid rgba(255,255,0,.95)' : 'none',
@@ -98,15 +99,21 @@ function Board({ brd, onSq, selSq, legalSqs=[], lastMove=null, chkSq=null, flipp
                     <div style={{ position:'absolute', inset:0, boxShadow:`inset 0 0 0 4px ${t.hint}`, pointerEvents:'none', borderRadius:2 }}/>
                   )}
                   {piece && (
-                    <span className="chess-piece" style={{
-                      fontSize:Math.round(SQ*.82), lineHeight:1, userSelect:'none',
-                      color: isW ? '#fff' : '#0A0808',
-                      textShadow: isW
-                        ? '0 0 6px #000,0 2px 8px rgba(0,0,0,.95),0 0 2px #222'
-                        : '0 0 3px rgba(255,255,255,.25),0 1px 5px rgba(0,0,0,.5)',
-                      position:'relative', zIndex:1,
-                      WebkitUserSelect:'none',
-                    }}>
+                    <span className="chess-piece"
+                      onMouseDown={onPieceDragStart ? (e)=>{ e.stopPropagation(); onPieceDragStart(e,sq) } : undefined}
+                      onTouchStart={onPieceDragStart ? (e)=>{ e.stopPropagation(); onPieceDragStart(e,sq) } : undefined}
+                      style={{
+                        fontSize:Math.round(SQ*.82), lineHeight:1, userSelect:'none',
+                        color: isW ? '#fff' : '#0A0808',
+                        textShadow: isW
+                          ? '0 0 6px #000,0 2px 8px rgba(0,0,0,.95),0 0 2px #222'
+                          : '0 0 3px rgba(255,255,255,.25),0 1px 5px rgba(0,0,0,.5)',
+                        position:'relative', zIndex:1,
+                        WebkitUserSelect:'none',
+                        touchAction:'none',
+                        cursor: onPieceDragStart ? 'grab' : 'default',
+                        opacity: onPieceDragStart?.__draggingFrom === sq ? 0 : 1,
+                      }}>
                       {UNI[pk]}
                     </span>
                   )}
@@ -413,9 +420,129 @@ export default function OnlinePlayScreen({ gameData, user, onBack, ChessLib, loa
   }
 
   // ════════════════════════════════════════════════════════════════
+  //  DRAG-AND-DROP
+  // ════════════════════════════════════════════════════════════════
+  const dragRef         = useRef(null)   // {from, startX, startY, moved, boardEl, dropHandler}
+  const dragJustMoved   = useRef(false)
+  const dragHandlersRef = useRef({})
+  const [ghostState, setGhostState] = useState(null)  // {x,y,pk,isW}
+
+  function getSqFromPos(clientX, clientY, rect, fl) {
+    const coordOff = 18  // coord labels are always shown
+    const borderOff = 2
+    const relX = clientX - rect.left - borderOff - coordOff
+    const relY = clientY - rect.top  - borderOff
+    const ci = Math.floor(relX / SQ)
+    const ri = Math.floor(relY / SQ)
+    if (ci < 0 || ci > 7 || ri < 0 || ri > 7) return null
+    const bCol = fl ? 7-ci : ci
+    const bRow = fl ? 7-ri : ri
+    return `${String.fromCharCode(97+bCol)}${8-bRow}`
+  }
+
+  function startDrag(e, sq) {
+    const g = chessRef.current
+    if (!g || gStatus !== 'playing') return
+    if (g.turn() !== myColor) return
+    const piece = g.get(sq)
+    if (!piece || piece.color !== myColor) return
+    if (e.touches) e.preventDefault()
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY
+    // Find board container
+    let el = e.target
+    while (el && el.getAttribute?.('data-chess-board') !== '1') el = el.parentElement
+    setSel(sq)
+    setLegal(g.moves({ square: sq, verbose: true }).map(m => m.to))
+    dragRef.current = {
+      from: sq, startX: clientX, startY: clientY, moved: false,
+      boardEl: el, isFlipped,
+      dropHandler: (from, to) => {
+        const g2 = chessRef.current
+        if (!g2 || gStatus !== 'playing') { setSel(null); setLegal([]); return }
+        if (g2.turn() !== myColor) { setSel(null); setLegal([]); return }
+        const lm = g2.moves({ square: from, verbose: true }).map(m => m.to)
+        if (!lm.includes(to)) { setSel(null); setLegal([]); return }
+        const p = g2.get(from)
+        const isPromo = p?.type === 'p' && ((myColor === 'w' && to[1] === '8') || (myColor === 'b' && to[1] === '1'))
+        if (isPromo) { setPromoFrom(from); setPromoTo(to); setSel(null); setLegal([]); return }
+        applyMyMove(from, to, 'q')
+      },
+    }
+    const pk = `${piece.color}${piece.type.toUpperCase()}`
+    setGhostState({ x: clientX, y: clientY, pk, isW: piece.color === 'w' })
+  }
+
+  function onDragMove(e) {
+    if (!dragRef.current) return
+    if (e.cancelable) e.preventDefault()
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY
+    if (!dragRef.current.moved) {
+      const dx = clientX - dragRef.current.startX
+      const dy = clientY - dragRef.current.startY
+      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) dragRef.current.moved = true
+    }
+    setGhostState(s => s ? { ...s, x: clientX, y: clientY } : null)
+  }
+
+  function onDragEnd(e) {
+    if (!dragRef.current) return
+    const { from, moved, boardEl, dropHandler, isFlipped: fl } = dragRef.current
+    dragRef.current = null
+    setGhostState(null)
+    if (!moved) return
+    dragJustMoved.current = true
+    setTimeout(() => { dragJustMoved.current = false }, 150)
+    const clientX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX
+    const clientY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY
+    if (!boardEl) { setSel(null); setLegal([]); return }
+    const to = getSqFromPos(clientX, clientY, boardEl.getBoundingClientRect(), fl)
+    if (!to || to === from) { setSel(null); setLegal([]); return }
+    dropHandler?.(from, to)
+  }
+
+  dragHandlersRef.current = { onDragMove, onDragEnd }
+
+  useEffect(() => {
+    const mm = (e) => dragHandlersRef.current.onDragMove(e)
+    const mu = (e) => dragHandlersRef.current.onDragEnd(e)
+    window.addEventListener('mousemove', mm)
+    window.addEventListener('mouseup', mu)
+    window.addEventListener('touchmove', mm, { passive: false })
+    window.addEventListener('touchend', mu)
+    return () => {
+      window.removeEventListener('mousemove', mm)
+      window.removeEventListener('mouseup', mu)
+      window.removeEventListener('touchmove', mm)
+      window.removeEventListener('touchend', mu)
+    }
+  }, [])
+
+  function GhostPiece() {
+    if (!ghostState) return null
+    const { x, y, pk, isW } = ghostState
+    return (
+      <div style={{
+        position: 'fixed', left: x - SQ*0.6, top: y - SQ*0.6,
+        width: SQ*1.2, height: SQ*1.2, fontSize: Math.round(SQ*1.0),
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        pointerEvents: 'none', zIndex: 9999, opacity: 0.92,
+        color: isW ? '#fff' : '#0A0808',
+        textShadow: isW ? '0 0 8px #000,0 2px 10px rgba(0,0,0,.95)' : '0 0 3px rgba(255,255,255,.3)',
+        transform: 'scale(1.12)', userSelect: 'none', WebkitUserSelect: 'none',
+        filter: 'drop-shadow(0 6px 14px rgba(0,0,0,.55))',
+      }}>
+        {UNI[pk]}
+      </div>
+    )
+  }
+
+  // ════════════════════════════════════════════════════════════════
   //  CLICK HANDLER — only active on our turn
   // ════════════════════════════════════════════════════════════════
   function handleSqClick(sq) {
+    if (dragJustMoved.current) { dragJustMoved.current = false; return }
     const g = chessRef.current
     if (!g || gStatus !== 'playing') return
     if (g.turn() !== myColor) return  // not our turn
@@ -749,7 +876,9 @@ export default function OnlinePlayScreen({ gameData, user, onBack, ChessLib, loa
             showCoords={showCoords}
             isMyTurn={myTurnNow && gStatus === 'playing'}
             gameOver={gStatus === 'complete'}
+            onPieceDragStart={gStatus === 'playing' ? startDrag : null}
           />
+          <GhostPiece/>
 
           {/* My label + timer */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 5, minHeight: 26 }}>
