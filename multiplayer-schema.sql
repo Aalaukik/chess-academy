@@ -2,6 +2,7 @@
 --  Chess Academy — Multiplayer Schema
 --  Run AFTER supabase-schema.sql in:
 --  Supabase Dashboard → SQL Editor → New Query → Run
+--  Safe to re-run — all statements use IF NOT EXISTS / DO guards.
 -- ══════════════════════════════════════════════════════════════════
 
 -- ── 1. MULTIPLAYER GAMES TABLE ────────────────────────────────────
@@ -21,7 +22,7 @@ create table if not exists public.multiplayer_games (
   -- Board state — always kept current so reconnecting clients can catch up
   fen             text        not null
                                 default 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
-  move_history    text[]      not null default '{}',   -- SAN array, e.g. {"e4","e5","Nf3"}
+  move_history    text[]      not null default '{}',   -- SAN array e.g. {"e4","e5","Nf3"}
   last_move_from  text,                                -- e.g. "e2"
   last_move_to    text,                                -- e.g. "e4"
 
@@ -44,27 +45,56 @@ create table if not exists public.multiplayer_games (
 );
 
 -- ── 2. ENABLE REALTIME on the new table ──────────────────────────
---    This makes Postgres Changes work in the Supabase Realtime channel.
-alter publication supabase_realtime add table public.multiplayer_games;
+--    Wrapped in a DO block so re-running this script never throws
+--    "already a member of publication" (error 42710).
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname    = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename  = 'multiplayer_games'
+  ) then
+    alter publication supabase_realtime add table public.multiplayer_games;
+  end if;
+end $$;
 
 -- ── 3. ROW LEVEL SECURITY ─────────────────────────────────────────
 alter table public.multiplayer_games enable row level security;
 
--- Everyone can read (required so a user can look up a game by invite code
--- before they've been set as black_id)
-create policy "Anyone can read multiplayer games"
-  on public.multiplayer_games for select
-  using (true);
+-- Everyone can read (required so a user can look up a game by invite
+-- code before they've been set as black_id)
+do $$ begin
+  if not exists (
+    select 1 from pg_policies
+    where tablename = 'multiplayer_games' and policyname = 'Anyone can read multiplayer games'
+  ) then
+    create policy "Anyone can read multiplayer games"
+      on public.multiplayer_games for select using (true);
+  end if;
+end $$;
 
--- Only logged-in users can create a game, and they must be white
-create policy "Auth users can create games"
-  on public.multiplayer_games for insert
-  with check (auth.uid() = white_id);
+do $$ begin
+  if not exists (
+    select 1 from pg_policies
+    where tablename = 'multiplayer_games' and policyname = 'Auth users can create games'
+  ) then
+    create policy "Auth users can create games"
+      on public.multiplayer_games for insert
+      with check (auth.uid() = white_id);
+  end if;
+end $$;
 
--- Only white or black can update a game row
-create policy "Participants can update game"
-  on public.multiplayer_games for update
-  using (auth.uid() = white_id or auth.uid() = black_id);
+do $$ begin
+  if not exists (
+    select 1 from pg_policies
+    where tablename = 'multiplayer_games' and policyname = 'Participants can update game'
+  ) then
+    create policy "Participants can update game"
+      on public.multiplayer_games for update
+      using (auth.uid() = white_id or auth.uid() = black_id);
+  end if;
+end $$;
 
 -- ── 4. INDEXES ────────────────────────────────────────────────────
 create index if not exists idx_mp_games_invite_code
@@ -79,9 +109,7 @@ create index if not exists idx_mp_games_white_id
 create index if not exists idx_mp_games_black_id
   on public.multiplayer_games (black_id);
 
--- ── 5. HELPER FUNCTION: clean up stale waiting games (optional) ───
---    Call this from a Supabase Edge Function cron if you like, or just
---    run manually.  Marks any game waiting > 10 min as aborted.
+-- ── 5. HELPER FUNCTION: clean up stale waiting games ─────────────
 create or replace function public.cleanup_stale_games()
 returns void language sql security definer as $$
   update public.multiplayer_games
@@ -90,15 +118,15 @@ returns void language sql security definer as $$
     and created_at < now() - interval '10 minutes';
 $$;
 
--- ── 6. ALLOW NULL DIFFICULTY IN game_sessions (online games have no AI level) ─
---    The original schema has `check (difficulty between 0 and 4)` which rejects NULL.
---    This drops that constraint so online games can insert difficulty = NULL.
-ALTER TABLE public.game_sessions
-  DROP CONSTRAINT IF EXISTS game_sessions_difficulty_check;
+-- ── 6. ALLOW NULL DIFFICULTY IN game_sessions ────────────────────
+--    Online games have no AI difficulty level so difficulty = NULL.
+--    The original schema's check rejects NULL; this relaxes it.
+alter table public.game_sessions
+  drop constraint if exists game_sessions_difficulty_check;
 
-ALTER TABLE public.game_sessions
-  ADD CONSTRAINT game_sessions_difficulty_check
-  CHECK (difficulty IS NULL OR difficulty BETWEEN 0 AND 4);
+alter table public.game_sessions
+  add constraint game_sessions_difficulty_check
+  check (difficulty is null or difficulty between 0 and 4);
 
 -- ── VERIFY ────────────────────────────────────────────────────────
 select column_name, data_type
