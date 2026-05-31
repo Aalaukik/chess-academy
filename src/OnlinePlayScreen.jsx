@@ -143,7 +143,7 @@ function Board({ brd, onSq, selSq, legalSqs=[], lastMove=null, chkSq=null, flipp
  * @param {boolean}  showCoords
  * @param {boolean}  soundOn
  */
-export default function OnlinePlayScreen({ gameData, user, onBack, ChessLib, loaded, theme='walnut', showCoords=true, soundOn=true }) {
+export default function OnlinePlayScreen({ gameData, user, onBack, ChessLib, loaded, theme='walnut', showCoords=true, soundOn=true, onStatsChange, onEloChange }) {
   const { game: initGame, myColor } = gameData
   const myName  = myColor === 'w' ? initGame.white_name : initGame.black_name
   const oppName = myColor === 'w' ? (initGame.black_name ?? 'Waiting…') : initGame.white_name
@@ -160,7 +160,9 @@ export default function OnlinePlayScreen({ gameData, user, onBack, ChessLib, loa
   const [gStatus, setGStatus] = useState('playing') // playing | complete
   const [winner,  setWinner]  = useState(null)      // 'white'|'black'|'draw'
   const [resultReason, setResultReason] = useState('')
-  const moveListRef = useRef(null)
+  const moveListRef   = useRef(null)
+  const gameStartTime = useRef(Date.now())
+  const savedRef      = useRef(false)   // prevent double-save on remount
 
   // ── Promo dialog ─────────────────────────────────────────────
   const [promoFrom, setPromoFrom] = useState(null)
@@ -182,6 +184,71 @@ export default function OnlinePlayScreen({ gameData, user, onBack, ChessLib, loa
   const [panelTab, setPanelTab] = useState('moves')
 
   function play(k) { if (soundOn) SND[k]?.() }
+
+  // ── Elo calculation (K=32, same formula as AI mode) ──────────
+  // Online opponent is treated as Elo 1200 (neutral baseline).
+  // In a real ladder you'd fetch both players' actual Elo from DB.
+  const ONLINE_OPP_ELO = 1200
+  function calcElo(playerElo, opponentElo, result) {
+    const K = 32
+    const expected = 1 / (1 + Math.pow(10, (opponentElo - playerElo) / 400))
+    return Math.round(playerElo + K * (result - expected))
+  }
+
+  // ── Save completed game to game_sessions + update progress ───
+  async function saveSessionToDb(result, reason, chess) {
+    if (!user || savedRef.current) return   // guests skip; guard double-save
+    savedRef.current = true
+    const durationS  = Math.round((Date.now() - gameStartTime.current) / 1000)
+    const moves      = chess?.history() ?? []
+
+    // Map multiplayer result to game_sessions result enum
+    const iWon = (result === 'white' && myColor === 'w') || (result === 'black' && myColor === 'b')
+    const sessionResult =
+      result === 'draw' || result === 'aborted' ? 'draw'
+      : reason === 'resign' ? (iWon ? 'win' : 'resign')
+      : reason === 'timeout' ? (iWon ? 'win' : 'timeout')
+      : iWon ? 'win' : 'loss'
+
+    // 1. Insert into game_sessions so profile history shows it
+    await supabase.from('game_sessions').insert({
+      user_id:      user.id,
+      result:       sessionResult,
+      player_color: myColor,
+      difficulty:   null,          // null = online game (not vs AI)
+      moves,
+      opening:      detectOpeningFromMoves(moves),
+      total_moves:  moves.length,
+      duration_s:   durationS,
+    })
+
+    // 2. Update progress stats (wins / losses / draws)
+    const statsDelta = sessionResult === 'win'  ? { wins: 1 }
+                     : sessionResult === 'loss' || sessionResult === 'resign' || sessionResult === 'timeout'
+                       ? { losses: 1 }
+                     : { draws: 1 }
+    onStatsChange?.(statsDelta)
+
+    // 3. Update Elo via callback to parent (chess-academy.jsx manages elo state)
+    const numResult = sessionResult === 'win' ? 1 : sessionResult === 'draw' ? 0.5 : 0
+    onEloChange?.(numResult, ONLINE_OPP_ELO)
+  }
+
+  // Minimal opening detector (reuses same map from chess-academy)
+  const OPENINGS = {
+    'e4 e5':'Open Game','e4 e5 Nf3 Nc6 Bc4':'Italian Game',
+    'e4 e5 Nf3 Nc6 Bb5':'Ruy López','e4 e6':'French Defense',
+    'e4 c5':'Sicilian Defense','e4 c6':'Caro-Kann',
+    'd4 d5':'Queen\'s Gambit','d4 Nf6':'Indian Defense',
+    'd4 Nf6 c4 g6':'King\'s Indian','Nf3':'Réti Opening','c4':'English Opening',
+  }
+  function detectOpeningFromMoves(sanArr) {
+    const mv = sanArr.slice(0, 8).join(' ')
+    let match = ''
+    for (const [k, n] of Object.entries(OPENINGS))
+      if (mv.startsWith(k) && k.length > match.length) match = k
+    return match ? OPENINGS[match] : (sanArr.length > 0 ? 'Online Game' : '')
+  }
 
   // ════════════════════════════════════════════════════════════════
   //  INIT — load FEN, replay moves already in the game row
@@ -432,7 +499,7 @@ export default function OnlinePlayScreen({ gameData, user, onBack, ChessLib, loa
     setGStatus('complete')
     setWinner(result)
     setResultReason(reason)
-    const iWon = result === myColor || result === (myColor === 'w' ? 'white' : 'black') || (myColor === 'w' && result === 'white') || (myColor === 'b' && result === 'black')
+    const iWon = (result === 'white' && myColor === 'w') || (result === 'black' && myColor === 'b')
     if (result === 'draw') play('over')
     else if (iWon) play('win')
     else play('over')
@@ -445,6 +512,9 @@ export default function OnlinePlayScreen({ gameData, user, onBack, ChessLib, loa
         blackTimeMs: myColor === 'b' ? myTimeMs : oppTimeMs,
       })
     }
+
+    // Always save to game_sessions + update stats + Elo
+    await saveSessionToDb(result, reason, g)
   }
 
   // ════════════════════════════════════════════════════════════════

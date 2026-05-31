@@ -90,6 +90,16 @@ returns void language sql security definer as $$
     and created_at < now() - interval '10 minutes';
 $$;
 
+-- ── 6. ALLOW NULL DIFFICULTY IN game_sessions (online games have no AI level) ─
+--    The original schema has `check (difficulty between 0 and 4)` which rejects NULL.
+--    This drops that constraint so online games can insert difficulty = NULL.
+ALTER TABLE public.game_sessions
+  DROP CONSTRAINT IF EXISTS game_sessions_difficulty_check;
+
+ALTER TABLE public.game_sessions
+  ADD CONSTRAINT game_sessions_difficulty_check
+  CHECK (difficulty IS NULL OR difficulty BETWEEN 0 AND 4);
+
 -- ── VERIFY ────────────────────────────────────────────────────────
 select column_name, data_type
 from information_schema.columns

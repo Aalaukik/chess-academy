@@ -1471,6 +1471,24 @@ export default function ChessAcademy({ user = null, onSignOut }) {
       theme={theme}
       showCoords={showCoords}
       soundOn={soundOn}
+      onStatsChange={(delta)=>{
+        // delta is { wins:1 } | { losses:1 } | { draws:1 }
+        const ns={
+          w: stats.w + (delta.wins   ?? 0),
+          l: stats.l + (delta.losses ?? 0),
+          d: stats.d + (delta.draws  ?? 0),
+        };
+        setStats(ns);
+        saveProgress(undefined,undefined,undefined,ns);
+      }}
+      onEloChange={(result, oppElo)=>{
+        // result: 1=win, 0.5=draw, 0=loss
+        const K=32;
+        const expected=1/(1+Math.pow(10,(oppElo-elo)/400));
+        const newElo=Math.round(elo + K*(result-expected));
+        setElo(newElo);
+        saveProgress(undefined,undefined,undefined,undefined,newElo);
+      }}
     />
   );
 
