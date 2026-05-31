@@ -14,10 +14,10 @@ const TIME_OPTS = [
 function Card({ children, style }) {
   return (
     <div style={{
-      background:    'var(--color-background-primary)',
-      border:        '0.5px solid var(--color-border-tertiary)',
-      borderRadius:  'var(--border-radius-lg)',
-      padding:       '1rem 1.25rem',
+      background:   'var(--color-background-primary)',
+      border:       '0.5px solid var(--color-border-tertiary)',
+      borderRadius: 'var(--border-radius-lg)',
+      padding:      '1rem 1.25rem',
       ...style,
     }}>
       {children}
@@ -31,18 +31,18 @@ function Btn({ children, onClick, disabled, color = '#4A43A0', ghost = false, sm
       onClick={onClick}
       disabled={disabled || loading}
       style={{
-        padding:       small ? '6px 14px' : '10px 20px',
-        fontSize:      small ? 12 : 14,
-        fontWeight:    600,
-        borderRadius:  'var(--border-radius-md)',
-        border:        ghost ? `0.5px solid ${color}` : 'none',
-        background:    ghost ? 'transparent' : color,
-        color:         ghost ? color : '#fff',
-        cursor:        (disabled || loading) ? 'default' : 'pointer',
-        opacity:       (disabled || loading) ? 0.5 : 1,
-        transition:    'opacity .15s, transform .1s',
-        whiteSpace:    'nowrap',
-        fontFamily:    'var(--font-sans)',
+        padding:      small ? '6px 14px' : '10px 20px',
+        fontSize:     small ? 12 : 14,
+        fontWeight:   600,
+        borderRadius: 'var(--border-radius-md)',
+        border:       ghost ? `0.5px solid ${color}` : 'none',
+        background:   ghost ? 'transparent' : color,
+        color:        ghost ? color : '#fff',
+        cursor:       (disabled || loading) ? 'default' : 'pointer',
+        opacity:      (disabled || loading) ? 0.5 : 1,
+        transition:   'opacity .15s, transform .1s',
+        whiteSpace:   'nowrap',
+        fontFamily:   'var(--font-sans)',
       }}
       onMouseEnter={e => { if (!disabled && !loading) e.currentTarget.style.opacity = '.85' }}
       onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}
@@ -75,40 +75,38 @@ function StatusBadge({ status }) {
 //  MAIN COMPONENT
 // ════════════════════════════════════════════════════════════════
 export default function OnlineScreen({ user, onJoinGame, onBack }) {
-  // ── Tab state ─────────────────────────────────────────────────
-  const [tab, setTab]             = useState('create')  // create | join | recent
+  const [tab, setTab]             = useState('create')
 
-  // ── Create-game form ──────────────────────────────────────────
-  const [timeMsIdx, setTimeMsIdx] = useState(3)         // 10 min default
+  // Create-game form
+  const [timeMsIdx, setTimeMsIdx] = useState(3)
   const [creating, setCreating]   = useState(false)
-  const [waitingGame, setWaitingGame] = useState(null)  // the row we created
+  const [waitingGame, setWaitingGame] = useState(null)
   const lobbyChannelRef           = useRef(null)
 
-  // ── Join form ─────────────────────────────────────────────────
+  // Join form
   const [joinCode, setJoinCode]   = useState('')
   const [joining, setJoining]     = useState(false)
 
-  // ── Quick match ───────────────────────────────────────────────
+  // Quick match
   const [searching, setSearching] = useState(false)
 
-  // ── Recent games ─────────────────────────────────────────────
-  const [recentGames, setRecentGames] = useState([])
+  // Recent games
+  const [recentGames, setRecentGames]     = useState([])
   const [loadingRecent, setLoadingRecent] = useState(false)
 
-  // ── Shared error ─────────────────────────────────────────────
-  const [error, setError]         = useState('')
+  // Shared error / info
+  const [error, setError] = useState('')
+  const [info,  setInfo]  = useState('')
 
   const displayName = user
     ? (user.user_metadata?.username ?? user.email?.split('@')[0] ?? 'Player')
     : null
 
-  // ── Load recent games on mount and tab switch ─────────────────
   useEffect(() => {
     if (!user || tab !== 'recent') return
     loadRecentGames()
   }, [user, tab])
 
-  // ── Clean up lobby channel on unmount ─────────────────────────
   useEffect(() => {
     return () => {
       if (lobbyChannelRef.current) {
@@ -121,12 +119,13 @@ export default function OnlineScreen({ user, onJoinGame, onBack }) {
   async function loadRecentGames() {
     if (!user) return
     setLoadingRecent(true)
-    const { data } = await supabase
+    const { data, error: err } = await supabase
       .from('multiplayer_games')
       .select('*')
       .or(`white_id.eq.${user.id},black_id.eq.${user.id}`)
       .order('created_at', { ascending: false })
       .limit(12)
+    if (err) console.error('[loadRecentGames]', err.message)
     setRecentGames(data ?? [])
     setLoadingRecent(false)
   }
@@ -136,7 +135,7 @@ export default function OnlineScreen({ user, onJoinGame, onBack }) {
   // ════════════════════════════════════════════════════════════════
   async function createGame() {
     if (!user) { setError('Sign in to create an online game.'); return }
-    setCreating(true); setError('')
+    setCreating(true); setError(''); setInfo('')
 
     const timeSel = TIME_OPTS[timeMsIdx]
     const { data, error: err } = await supabase
@@ -150,10 +149,13 @@ export default function OnlineScreen({ user, onJoinGame, onBack }) {
         use_timer:       timeSel.ms > 0,
       })
       .select()
-      .single()
+      .single()   // INSERT always returns exactly 1 row — .single() is correct here
 
     setCreating(false)
-    if (err) { setError(err.message); return }
+    if (err || !data) {
+      setError(err?.message ?? 'Failed to create game. Make sure you are signed in and try again.')
+      return
+    }
     setWaitingGame(data)
     subscribeToLobby(data.id, 'w')
   }
@@ -173,46 +175,77 @@ export default function OnlineScreen({ user, onJoinGame, onBack }) {
 
   // ════════════════════════════════════════════════════════════════
   //  JOIN GAME BY CODE
+  //  KEY FIX: use .maybeSingle() not .single()
+  //  .single() throws HTTP 406 when 0 rows found.
+  //  .maybeSingle() returns { data: null, error: null } instead.
   // ════════════════════════════════════════════════════════════════
   async function joinByCode() {
     const code = joinCode.trim().toUpperCase()
-    if (code.length < 4) { setError('Enter a valid invite code.'); return }
+    if (code.length < 4) { setError('Enter a valid invite code (6 characters).'); return }
     if (!user) { setError('Sign in to join an online game.'); return }
-    setJoining(true); setError('')
+    setJoining(true); setError(''); setInfo('')
 
-    // Find the game
+    // ── Step 1: find game by invite code (any status) ─────────────
+    // We look up without status filter first so we can give a better error.
     const { data: game, error: findErr } = await supabase
       .from('multiplayer_games')
       .select('*')
       .eq('invite_code', code)
-      .eq('status', 'waiting')
-      .single()
+      .maybeSingle()    // ← returns null (not 406) when no row found
 
-    if (findErr || !game) {
+    if (findErr) {
       setJoining(false)
-      setError('Game not found or already started. Check the code and try again.')
+      setError(`Database error: ${findErr.message}`)
+      return
+    }
+
+    if (!game) {
+      setJoining(false)
+      setError(`No game found with code "${code}". Double-check and try again.`)
       return
     }
 
     if (game.white_id === user.id) {
       setJoining(false)
-      setError("That's your own game — share the code with a friend!")
+      // It's their own game — show the invite code so they can share it
+      setInfo(`That's your own game! Share code "${game.invite_code}" with a friend.`)
+      setWaitingGame(game)
+      subscribeToLobby(game.id, 'w')
       return
     }
 
+    if (game.status === 'complete' || game.status === 'aborted') {
+      setJoining(false)
+      setError('This game has already ended. Ask for a new invite code.')
+      return
+    }
+
+    if (game.status === 'active') {
+      // Game is active — maybe we're the black player rejoining
+      if (game.black_id === user.id) {
+        setJoining(false)
+        onJoinGame({ game, myColor: 'b' })
+        return
+      }
+      setJoining(false)
+      setError('This game already has two players.')
+      return
+    }
+
+    // status === 'waiting' — join as black
     await joinGameRow(game)
     setJoining(false)
   }
 
   // ════════════════════════════════════════════════════════════════
-  //  QUICK MATCH — find any open game
+  //  QUICK MATCH
   // ════════════════════════════════════════════════════════════════
   async function quickMatch() {
     if (!user) { setError('Sign in to play online.'); return }
-    setSearching(true); setError('')
+    if (searching) return   // prevent double-click
+    setSearching(true); setError(''); setInfo('')
 
-    // Find the oldest open game that isn't ours
-    const { data: games } = await supabase
+    const { data: games, error: listErr } = await supabase
       .from('multiplayer_games')
       .select('*')
       .eq('status', 'waiting')
@@ -220,8 +253,24 @@ export default function OnlineScreen({ user, onJoinGame, onBack }) {
       .order('created_at', { ascending: true })
       .limit(5)
 
+    if (listErr) {
+      setError(`Database error: ${listErr.message}`)
+      setSearching(false)
+      return
+    }
+
     if (games && games.length > 0) {
-      await joinGameRow(games[0])
+      const joined = await joinGameRow(games[0])
+      if (!joined) {
+        // Race condition — first game was snatched, try the next ones
+        for (let i = 1; i < games.length; i++) {
+          const ok = await joinGameRow(games[i])
+          if (ok) { setSearching(false); return }
+        }
+        // All gone — create a new one to wait in
+        setSearching(false)
+        await createGame()
+      }
     } else {
       // No open games — create one and wait
       setSearching(false)
@@ -231,6 +280,7 @@ export default function OnlineScreen({ user, onJoinGame, onBack }) {
   }
 
   // ── Common: join a game row as black ─────────────────────────
+  // Returns true if successful, false on race-condition failure.
   async function joinGameRow(game) {
     const { data: updated, error: joinErr } = await supabase
       .from('multiplayer_games')
@@ -240,20 +290,24 @@ export default function OnlineScreen({ user, onJoinGame, onBack }) {
         status:     'active',
       })
       .eq('id', game.id)
-      .eq('status', 'waiting')   // guard against race condition
+      .eq('status', 'waiting')     // race-condition guard
       .select()
-      .single()
+      .maybeSingle()    // ← returns null (not 406) if status changed before we got here
 
-    if (joinErr || !updated) {
-      setError('Could not join — game may have just started. Try another.')
-      return
+    if (joinErr) {
+      setError(`Join failed: ${joinErr.message}`)
+      return false
+    }
+    if (!updated) {
+      // Row was updated by someone else between our read and write — a race
+      return false
     }
     onJoinGame({ game: updated, myColor: 'b' })
+    return true
   }
 
-  // ── Subscribe to lobby channel waiting for black to join ──────
+  // ── Subscribe to lobby channel (creator waits for black) ──────
   function subscribeToLobby(gameId, myColor) {
-    // Clean up any previous channel
     if (lobbyChannelRef.current) supabase.removeChannel(lobbyChannelRef.current)
 
     const ch = supabase
@@ -261,11 +315,11 @@ export default function OnlineScreen({ user, onJoinGame, onBack }) {
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'multiplayer_games', filter: `id=eq.${gameId}` },
-        ({ new: game }) => {
-          if (game.status === 'active') {
+        ({ new: g }) => {
+          if (g.status === 'active') {
             supabase.removeChannel(ch)
             lobbyChannelRef.current = null
-            onJoinGame({ game, myColor })
+            onJoinGame({ game: g, myColor })
           }
         }
       )
@@ -274,7 +328,7 @@ export default function OnlineScreen({ user, onJoinGame, onBack }) {
     lobbyChannelRef.current = ch
   }
 
-  // ── Rejoin an active/waiting game ───────────────────────────
+  // ── Rejoin an in-progress game ────────────────────────────────
   function rejoinGame(game) {
     const myColor = game.white_id === user?.id ? 'w' : 'b'
     onJoinGame({ game, myColor })
@@ -296,26 +350,20 @@ export default function OnlineScreen({ user, onJoinGame, onBack }) {
   if (waitingGame) {
     return (
       <div style={{ padding: '1.5rem 0 5rem', fontFamily: 'var(--font-sans)' }}>
+        <style>{`@keyframes pulse2{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(1.06)}}`}</style>
         <div style={{ textAlign: 'center', padding: '2rem 1rem' }}>
-          {/* Animated waiting indicator */}
-          <style>{`
-            @keyframes pulse2{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(1.06)}}
-            @keyframes spin2{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-          `}</style>
           <div style={{ fontSize: 56, animation: 'pulse2 1.8s ease-in-out infinite', display: 'inline-block', marginBottom: 16 }}>♟</div>
           <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 6 }}>Waiting for opponent…</div>
           <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 28 }}>
             Share this code with your friend:
           </div>
 
-          {/* Invite code display */}
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: 12,
             background: 'var(--color-background-primary)',
             border: '1.5px solid #4A43A0',
             borderRadius: 'var(--border-radius-lg)',
-            padding: '14px 24px',
-            marginBottom: 24,
+            padding: '14px 24px', marginBottom: 24,
           }}>
             <span style={{ fontSize: 32, fontWeight: 700, letterSpacing: 8, color: '#4A43A0', fontFamily: 'monospace' }}>
               {waitingGame.invite_code}
@@ -368,42 +416,45 @@ export default function OnlineScreen({ user, onJoinGame, onBack }) {
         </div>
       )}
 
+      {/* Info */}
+      {info && !error && (
+        <div style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 'var(--border-radius-md)', background: 'rgba(92,184,138,.1)', border: '0.5px solid #5CB88A', fontSize: 13, color: '#5CB88A' }}>
+          {info}
+        </div>
+      )}
+
       {/* Quick match CTA */}
       <div
-        onClick={!user ? undefined : quickMatch}
+        onClick={!user || searching ? undefined : quickMatch}
         style={{
           background: user ? 'linear-gradient(135deg, #4A43A0 0%, #6C5CE7 100%)' : 'var(--color-background-secondary)',
           borderRadius: 'var(--border-radius-lg)',
-          padding: '1.25rem 1.5rem',
-          marginBottom: 12,
-          cursor: user ? 'pointer' : 'default',
+          padding: '1.25rem 1.5rem', marginBottom: 12,
+          cursor: user && !searching ? 'pointer' : 'default',
           display: 'flex', alignItems: 'center', gap: 16,
           boxShadow: user ? '0 4px 20px rgba(74,67,160,.35)' : 'none',
           transition: 'transform .2s, box-shadow .2s',
           opacity: !user ? 0.5 : 1,
         }}
-        onMouseEnter={e => { if (user) { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 28px rgba(74,67,160,.45)' } }}
+        onMouseEnter={e => { if (user && !searching) { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 28px rgba(74,67,160,.45)' } }}
         onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = user ? '0 4px 20px rgba(74,67,160,.35)' : 'none' }}
       >
-        <span style={{ fontSize: 38 }}>⚡</span>
+        <span style={{ fontSize: 38 }}>{searching ? '⏳' : '⚡'}</span>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 17, fontWeight: 700, color: '#fff', marginBottom: 3 }}>
-            {searching ? 'Finding a game…' : 'Quick Match'}
+            {searching ? 'Searching…' : 'Quick Match'}
           </div>
           <div style={{ fontSize: 12, color: 'rgba(255,255,255,.7)' }}>
             Join the next available game or create one and wait
           </div>
         </div>
-        {searching
-          ? <span style={{ fontSize: 22, animation: 'spin2 0.8s linear infinite', display: 'inline-block' }}>⏳</span>
-          : <span style={{ fontSize: 20, color: '#fff' }}>→</span>
-        }
+        <span style={{ fontSize: 20, color: '#fff' }}>→</span>
       </div>
 
-      {/* Tabs: Create / Join */}
+      {/* Tabs */}
       <div style={{ display: 'flex', borderBottom: '0.5px solid var(--color-border-tertiary)', marginBottom: 14 }}>
         {[['create', '+ Create Game'], ['join', '🔑 Join by Code'], ['recent', '📋 Recent']].map(([id, label]) => (
-          <button key={id} onClick={() => { setTab(id); setError('') }}
+          <button key={id} onClick={() => { setTab(id); setError(''); setInfo('') }}
             style={{
               flex: 1, padding: '9px 0', fontSize: 13, background: 'none', border: 'none',
               borderBottom: tab === id ? '2px solid #4A43A0' : '2px solid transparent',
@@ -434,12 +485,9 @@ export default function OnlineScreen({ user, onJoinGame, onBack }) {
               </button>
             ))}
           </div>
-
           <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 16, padding: '8px 12px', background: 'var(--color-background-secondary)', borderRadius: 'var(--border-radius-md)' }}>
             You will play as <strong>White ♙</strong> — your opponent joins as Black.
-            An invite code will be generated for you to share.
           </div>
-
           <Btn onClick={createGame} disabled={!user} loading={creating}>
             Create Game →
           </Btn>
@@ -455,8 +503,11 @@ export default function OnlineScreen({ user, onJoinGame, onBack }) {
           <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
             <input
               value={joinCode}
-              onChange={e => setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6))}
-              onKeyDown={e => e.key === 'Enter' && joinByCode()}
+              onChange={e => {
+                setError('')
+                setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6))
+              }}
+              onKeyDown={e => e.key === 'Enter' && !joining && joinByCode()}
               placeholder="A3K9XZ"
               maxLength={6}
               style={{
@@ -476,7 +527,7 @@ export default function OnlineScreen({ user, onJoinGame, onBack }) {
             </Btn>
           </div>
           <p style={{ fontSize: 11, color: 'var(--color-text-tertiary)', margin: 0 }}>
-            Codes are case-insensitive and valid for 10 minutes.
+            Codes are case-insensitive · letters and numbers only.
           </p>
         </Card>
       )}
@@ -487,13 +538,15 @@ export default function OnlineScreen({ user, onJoinGame, onBack }) {
           {!user && <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', fontStyle: 'italic' }}>Sign in to see your games.</p>}
           {user && loadingRecent && <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', fontStyle: 'italic' }}>Loading…</p>}
           {user && !loadingRecent && recentGames.length === 0 && (
-            <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', fontStyle: 'italic' }}>No online games yet.</p>
+            <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', fontStyle: 'italic' }}>No online games yet — create one above!</p>
           )}
           {recentGames.map(game => {
-            const isWhite  = game.white_id === user?.id
-            const oppName  = isWhite ? (game.black_name ?? '—') : (game.white_name ?? '—')
+            const isWhite   = game.white_id === user?.id
+            const oppName   = isWhite ? (game.black_name ?? '—') : (game.white_name ?? '—')
             const canRejoin = (game.status === 'waiting' || game.status === 'active')
                            && (game.white_id === user?.id || game.black_id === user?.id)
+            const myResult  = game.result === 'draw' || game.result === 'aborted' ? game.result
+                            : (isWhite && game.result === 'white') || (!isWhite && game.result === 'black') ? 'win' : 'loss'
             return (
               <div key={game.id} style={{
                 display: 'flex', alignItems: 'center', gap: 12,
@@ -505,11 +558,11 @@ export default function OnlineScreen({ user, onJoinGame, onBack }) {
                 <span style={{ fontSize: 20 }}>{isWhite ? '♙' : '♟'}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 2 }}>
-                    vs {oppName || 'Waiting…'}
+                    vs {oppName || 'Waiting for opponent…'}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)' }}>
                     {fmtDate(game.created_at)} · {fmtTime(game.time_control_ms)}
-                    {game.result ? ` · ${game.result === (isWhite ? 'white' : 'black') ? '🏆 Win' : game.result === 'draw' ? '🤝 Draw' : '💀 Loss'}` : ''}
+                    {game.result ? ` · ${myResult === 'win' ? '🏆 Win' : myResult === 'draw' ? '🤝 Draw' : myResult === 'aborted' ? '❌ Aborted' : '💀 Loss'}` : ''}
                   </div>
                 </div>
                 <StatusBadge status={game.status} />
