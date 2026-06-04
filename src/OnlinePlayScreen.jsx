@@ -422,7 +422,7 @@ export default function OnlinePlayScreen({ gameData, user, onBack, ChessLib, loa
   // ════════════════════════════════════════════════════════════════
   //  DRAG-AND-DROP
   // ════════════════════════════════════════════════════════════════
-  const dragRef         = useRef(null)   // {from, startX, startY, moved, boardEl, dropHandler}
+  const dragRef         = useRef(null)   // {from, startX, startY, moved, dropHandler, isFlipped}
   const dragJustMoved   = useRef(false)
   const dragHandlersRef = useRef({})
   const [ghostState, setGhostState] = useState(null)  // {x,y,pk,isW}
@@ -449,14 +449,11 @@ export default function OnlinePlayScreen({ gameData, user, onBack, ChessLib, loa
     if (e.touches) e.preventDefault()
     const clientX = e.touches ? e.touches[0].clientX : e.clientX
     const clientY = e.touches ? e.touches[0].clientY : e.clientY
-    // Find board container
-    let el = e.target
-    while (el && el.getAttribute?.('data-chess-board') !== '1') el = el.parentElement
     setSel(sq)
     setLegal(g.moves({ square: sq, verbose: true }).map(m => m.to))
     dragRef.current = {
       from: sq, startX: clientX, startY: clientY, moved: false,
-      boardEl: el, isFlipped,
+      isFlipped,
       dropHandler: (from, to) => {
         const g2 = chessRef.current
         if (!g2 || gStatus !== 'playing') { setSel(null); setLegal([]); return }
@@ -488,7 +485,7 @@ export default function OnlinePlayScreen({ gameData, user, onBack, ChessLib, loa
 
   function onDragEnd(e) {
     if (!dragRef.current) return
-    const { from, moved, boardEl, dropHandler, isFlipped: fl } = dragRef.current
+    const { from, moved, dropHandler, isFlipped: fl } = dragRef.current
     dragRef.current = null
     setGhostState(null)
     if (!moved) return
@@ -496,6 +493,7 @@ export default function OnlinePlayScreen({ gameData, user, onBack, ChessLib, loa
     setTimeout(() => { dragJustMoved.current = false }, 150)
     const clientX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX
     const clientY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY
+    const boardEl = document.querySelector('[data-chess-board="1"]')
     if (!boardEl) { setSel(null); setLegal([]); return }
     const to = getSqFromPos(clientX, clientY, boardEl.getBoundingClientRect(), fl)
     if (!to || to === from) { setSel(null); setLegal([]); return }
@@ -524,13 +522,12 @@ export default function OnlinePlayScreen({ gameData, user, onBack, ChessLib, loa
     const { x, y, pk, isW } = ghostState
     return (
       <div style={{
-        position: 'fixed', left: x - SQ*0.6, top: y - SQ*0.6,
-        width: SQ*1.2, height: SQ*1.2, fontSize: Math.round(SQ*1.0),
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        position: 'fixed', left: x, top: y,
+        fontSize: Math.round(SQ*1.15), lineHeight: 1,
         pointerEvents: 'none', zIndex: 9999, opacity: 0.92,
         color: isW ? '#fff' : '#0A0808',
-        textShadow: isW ? '0 0 8px #000,0 2px 10px rgba(0,0,0,.95)' : '0 0 3px rgba(255,255,255,.3)',
-        transform: 'scale(1.12)', userSelect: 'none', WebkitUserSelect: 'none',
+        textShadow: isW ? '0 0 8px #000,0 2px 10px rgba(0,0,0,.95)' : '0 0 3px rgba(255,255,255,.3),0 1px 5px rgba(0,0,0,.5)',
+        transform: 'translate(-50%,-50%)', userSelect: 'none', WebkitUserSelect: 'none',
         filter: 'drop-shadow(0 6px 14px rgba(0,0,0,.55))',
       }}>
         {UNI[pk]}
