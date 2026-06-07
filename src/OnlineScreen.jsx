@@ -112,12 +112,16 @@ export default function OnlineScreen({ user, onJoinGame, onBack }) {
     if (!user) { setError('Sign in to create an online game.'); return }
     setCreating(true); setError(''); setInfo('')
     const timeSel = TIME_OPTS[timeMsIdx]
+    // Generate a random 6-char alphanumeric invite code client-side as a fallback
+    // (a DB trigger should also set this; see multiplayer-games-schema.sql)
+    const inviteCode = Math.random().toString(36).slice(2, 8).toUpperCase()
     const { data, error: err } = await supabase.from('multiplayer_games').insert({
       white_id: user.id, white_name: displayName,
       time_control_ms: timeSel.ms,
       white_time_ms: timeSel.ms || 999999999,
       black_time_ms: timeSel.ms || 999999999,
       use_timer: timeSel.ms > 0,
+      invite_code: inviteCode,
     }).select().single()
     setCreating(false)
     if (err || !data) { setError(err?.message ?? 'Failed to create game.'); return }

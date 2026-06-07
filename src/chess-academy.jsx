@@ -131,7 +131,7 @@ const PUZZLES=[
   {id:"p12",cat:"Skewer",diff:3,fen:"6k1/6pp/8/1b6/8/8/6PP/R5K1 w - - 0 1",sol:["Ra5"],hint:"Attack the bishop — when it moves to safety, look at what's behind it!"},
   {id:"p13",cat:"Skewer",diff:3,fen:"8/8/1k6/8/1R6/8/8/6K1 w - - 0 1",sol:["Rb8+"],hint:"Give check with the rook — the king must move, revealing the piece behind."},
   {id:"p14",cat:"Back rank",diff:2,fen:"6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1",sol:["Rd8#"],hint:"The black king has no flight squares! The d-file is your highway to checkmate."},
-  {id:"p15",cat:"Back rank",diff:2,fen:"r5k1/5ppp/8/1Q6/8/8/5PPP/6K1 w - - 0 1",sol:["Qb8+","Rxb8","?"],hint:"Force the rook onto the 8th rank with a queen sacrifice — then mop up."},
+  {id:"p15",cat:"Back rank",diff:2,fen:"5bk1/5ppp/8/8/8/3R4/5PPP/6K1 w - - 0 1",sol:["Rd8#"],hint:"The rook commands the back rank — the king is trapped by its own pieces!"},
   {id:"p16",cat:"Discovery",diff:3,fen:"r1bqk2r/ppp2ppp/3p1n2/4p3/1bB1P3/2N2N2/PPPP1PPP/R1BQK2R w KQkq - 0 5",sol:["Nd5"],hint:"Move the knight to discover an attack from the bishop behind it!"},
   {id:"p17",cat:"Discovery",diff:3,fen:"rnbqk2r/pppp1ppp/4pn2/8/1bPP4/2N5/PP2PPPP/R1BQKBNR w KQkq - 2 4",sol:["Qa4+"],hint:"The queen check discovers an attack — your opponent must deal with two threats."},
   {id:"p18",cat:"Endgame",diff:3,fen:"8/8/3k4/8/8/3K4/4P3/8 w - - 0 1",sol:["e4"],hint:"Advance the pawn toward promotion. With correct king play this should win."},
@@ -143,6 +143,42 @@ const SQ=46;
 // ════════════════════════════════════════════════════════════════
 //  4. MAIN COMPONENT
 // ════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════
+//  5. BOARD COMPONENT (module-level to prevent remount on parent render)
+// ════════════════════════════════════════════════════════════════
+function Board({brd,onSq,selSq,legalSqs=[],lastMove=null,noFlip=false,chkSq=null,hintSq2=null,sz=SQ,onPieceDragStart=null,theme='walnut',flipped=false,showCoords=true,draggingFrom=null,myTurn=false,gameOver=false}){
+  const t=THEMES[theme]??THEMES.walnut,fl=flipped&&!noFlip,rows=fl?[...brd].reverse():brd;
+  
+  return(
+    <div data-chess-board="1" style={{display:"inline-flex",flexDirection:"column",borderRadius:6,overflow:"hidden",boxShadow:"0 24px 72px rgba(0,0,0,.65),0 4px 12px rgba(0,0,0,.4)",border:`2px solid ${t.bdr}`,outline:!noFlip&&!gameOver?(myTurn?"2px solid rgba(200,168,75,0.65)":"2px solid rgba(200,168,75,0.12)"):"2px solid transparent",outlineOffset:"3px",transition:"outline-color .4s ease",boxSizing:"border-box",userSelect:"none",WebkitUserSelect:"none"}}>
+      {rows.map((rowData,ri)=>{
+        const bRow=fl?7-ri:ri,rank=8-bRow,dispRow=fl?[...rowData].reverse():rowData;
+        return(
+          <div key={ri} style={{display:"flex"}}>
+            {showCoords&&<div style={{width:18,height:sz,display:"flex",alignItems:"center",justifyContent:"center",background:"#0A0908",fontSize:9,color:"#555",fontFamily:"monospace",fontWeight:700,flexShrink:0}}>{rank}</div>}
+            {dispRow.map((piece,ci)=>{
+              const bCol=fl?7-ci:ci,sq=`${String.fromCharCode(97+bCol)}${rank}`;
+              const isLight=(bRow+bCol)%2!==0,isSel=selSq===sq,isLeg=legalSqs.includes(sq);
+              const isLF=lastMove?.from===sq,isLT=lastMove?.to===sq,isChk=chkSq===sq,isHint=hintSq2===sq;
+              const pk=piece?`${piece.color}${piece.type.toUpperCase()}`:null,isW=piece?.color==="w";
+              const isBeingDragged=draggingFrom===sq;
+              let bg=isLight?t.l:t.d;if(isSel)bg=t.sel;else if(isLF||isLT)bg=t.last;if(isChk)bg="rgba(220,60,40,.72)";
+              return(
+                <div key={ci} onClick={()=>onSq(sq)} className="board-sq" style={{width:sz,height:sz,background:bg,cursor:onPieceDragStart&&piece?"grab":"pointer",display:"flex",alignItems:"center",justifyContent:"center",position:"relative",transition:"background .08s",outline:isSel?"2.5px solid rgba(255,255,0,.95)":isHint?"2.5px solid rgba(76,175,130,.9)":"none",outlineOffset:"-2.5px",boxSizing:"border-box",animation:isLT?"sqFlash .45s ease-out":"none"}}>
+                  {isLeg&&!piece&&<div style={{width:Math.round(sz*.34),height:Math.round(sz*.34),borderRadius:"50%",background:t.hint,pointerEvents:"none"}}/>}
+                  {isLeg&&piece&&<div style={{position:"absolute",inset:0,boxShadow:`inset 0 0 0 4px ${t.hint}`,pointerEvents:"none",borderRadius:2}}/>}
+                  {piece&&<span className="chess-piece" onMouseDown={onPieceDragStart?(e)=>{e.stopPropagation();onPieceDragStart(e,sq);}:undefined} onTouchStart={onPieceDragStart?(e)=>{e.stopPropagation();onPieceDragStart(e,sq);}:undefined} style={{fontSize:Math.round(sz*.82),lineHeight:1,userSelect:"none",color:isW?"#fff":"#0A0808",textShadow:isW?"0 0 6px #000,0 2px 8px rgba(0,0,0,.95)":"0 0 3px rgba(255,255,255,.25),0 1px 5px rgba(0,0,0,.5)",position:"relative",zIndex:1,opacity:isBeingDragged?0:1,cursor:onPieceDragStart?"grab":"default",transition:"opacity .05s",WebkitUserSelect:"none",touchAction:"none"}}>{UNI[pk]}</span>}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+      {showCoords&&(<div style={{display:"flex",background:"#0A0908"}}><div style={{width:18}}/>{Array.from({length:8},(_,i)=>(<div key={i} style={{width:sz,textAlign:"center",fontSize:9,color:"#555",padding:"3px 0",fontFamily:"monospace",fontWeight:700}}>{String.fromCharCode(97+(fl?7-i:i))}</div>))}</div>)}
+    </div>
+  );
+}
+
 export default function ChessAcademy({user=null,onSignOut}){
   const ChessLib=useRef(null);
   const [loaded,setLoaded]=useState(false);
@@ -225,13 +261,13 @@ export default function ChessAcademy({user=null,onSignOut}){
 
   useEffect(()=>{
     if(user) return;
-    (async()=>{try{const r=await window.storage?.get("chess_v2");if(r?.value){const p=JSON.parse(r.value);if(p.done)setDoneLessons(new Set(p.done));if(p.solved)setSolvedPz(new Set(p.solved));if(p.streak)setStreak(p.streak);if(p.stats)setStats(p.stats);if(p.elo!=null)setElo(p.elo);}}catch{}})();
+    try{const raw=localStorage.getItem("chess_v2");if(raw){const p=JSON.parse(raw);if(p.done)setDoneLessons(new Set(p.done));if(p.solved)setSolvedPz(new Set(p.solved));if(p.streak!=null)setStreak(p.streak);if(p.stats)setStats(p.stats);if(p.elo!=null)setElo(p.elo);}}catch{}
   },[]);
 
-  async function saveProgress(dl,sp,sk,st,el){
+  function saveProgress(dl,sp,sk,st,el){
     if(user) return;
     const _dl=dl??dlRef.current,_sp=sp??spRef.current,_sk=sk??skRef.current,_st=st??stRef.current,_el=el??elRef.current;
-    try{await window.storage?.set("chess_v2",JSON.stringify({done:[..._dl],solved:[..._sp],streak:_sk,stats:_st,elo:_el}));}catch{}
+    try{localStorage.setItem("chess_v2",JSON.stringify({done:[..._dl],solved:[..._sp],streak:_sk,stats:_st,elo:_el}));}catch{}
   }
 
   const gameStartTime=useRef(null);
@@ -279,7 +315,7 @@ export default function ChessAcademy({user=null,onSignOut}){
     if(e.touches) e.preventDefault();
     const clientX=e.touches?e.touches[0].clientX:e.clientX,clientY=e.touches?e.touches[0].clientY:e.clientY;
     dragRef.current={from:sq,startX:clientX,startY:clientY,moved:false,dropHandler,isFlipped};
-    setGhostState({x:clientX,y:clientY,pk:`${piece.color}${piece.type.toUpperCase()}`,isW:piece.color==="w"});
+    setGhostState({x:clientX,y:clientY,pk:`${piece.color}${piece.type.toUpperCase()}`,isW:piece.color==="w",from:sq});
   }
 
   function playDragStart(e,sq){
@@ -447,19 +483,27 @@ export default function ChessAcademy({user=null,onSignOut}){
   }
 
   function undoMove(){const g=gRef.current;if(!g||hist.length<2)return;g.undo();g.undo();syncGame(g);setSel(null);setLegal([]);setLastMv(null);setHintSq(null);setGStatus("playing");setWinner(null);}
-  function resign(){const g=gRef.current;const resignColor=gameMode==="p2p"?(g?.turn()||"w"):pCol;const w=resignColor==="w"?"Black":"White";setGStatus("resign");setWinner(w);setTimerOn(false);play("over");const ns={...stats,l:stats.l+1};setStats(ns);saveProgress(undefined,undefined,undefined,ns);}
+  function resign(){const g=gRef.current;const resignColor=gameMode==="p2p"?(g?.turn()||"w"):pCol;const w=resignColor==="w"?"Black":"White";setGStatus("resign");setWinner(w);setTimerOn(false);if(gameMode!=="p2p"){const ns={...stats,l:stats.l+1};setStats(ns);saveProgress(undefined,undefined,undefined,ns);}}
   function showHint(){const g=gRef.current;if(!g||gStatus!=="playing")return;const mv=getAIMove(g,Math.min(diff+1,4));if(mv){const m=g.moves({verbose:true}).find(m=>m.san===mv);if(m)setHintSq(m.from);else{const m2=g.moves({verbose:true})[0];if(m2)setHintSq(m2.from);}}}
 
   useEffect(()=>{
     if(gStatus==="checkmate"||gStatus==="stalemate"||gStatus==="draw"||gStatus==="resign"){
       const iWon=winner===(pCol==="w"?"White":"Black");
-      if(gameMode==="ai"){const result=gStatus==="checkmate"?(iWon?1:0):gStatus==="resign"?0:0.5;const newElo=calcNewElo(elo,DIFF_ELO[diff],result);setElo(newElo);saveProgress(undefined,undefined,undefined,undefined,newElo);}
-      const result=gStatus==="checkmate"?(iWon?"win":"loss"):gStatus==="resign"?"loss":"draw";
-      const durationS=gameStartTime.current?Math.round((Date.now()-gameStartTime.current)/1000):0;
-      saveGame({result,playerColor:pCol,difficulty:diff,moves:hist.map(m=>m.san),opening,durationS});
-      if(gStatus==="checkmate"&&iWon){play("win");const ns={...stats,w:stats.w+1};setStats(ns);saveProgress(undefined,undefined,undefined,ns);}
-      else if(gStatus==="checkmate"||gStatus==="resign"){play("over");if(gStatus!=="resign"){const ns={...stats,l:stats.l+1};setStats(ns);saveProgress(undefined,undefined,undefined,ns);}}
-      else{play("over");const ns={...stats,d:stats.d+1};setStats(ns);saveProgress(undefined,undefined,undefined,ns);}
+      if(gameMode==="ai"){
+        const result=gStatus==="checkmate"?(iWon?1:0):gStatus==="resign"?0:0.5;
+        const newElo=calcNewElo(elo,DIFF_ELO[diff],result);setElo(newElo);saveProgress(undefined,undefined,undefined,undefined,newElo);
+        const sessionResult=gStatus==="checkmate"?(iWon?"win":"loss"):gStatus==="resign"?"loss":"draw";
+        const durationS=gameStartTime.current?Math.round((Date.now()-gameStartTime.current)/1000):0;
+        saveGame({result:sessionResult,playerColor:pCol,difficulty:diff,moves:hist.map(m=>m.san),opening,durationS});
+        if(gStatus==="checkmate"&&iWon){play("win");const ns={...stats,w:stats.w+1};setStats(ns);saveProgress(undefined,undefined,undefined,ns);}
+        else if(gStatus==="checkmate"){play("over");const ns={...stats,l:stats.l+1};setStats(ns);saveProgress(undefined,undefined,undefined,ns);}
+        else if(gStatus!=="resign"){play("over");const ns={...stats,d:stats.d+1};setStats(ns);saveProgress(undefined,undefined,undefined,ns);}
+        else{play("over");}
+      } else {
+        if(gStatus==="checkmate"&&!iWon) play("over");
+        else if(gStatus==="checkmate") play("win");
+        else play("over");
+      }
     }
   },[gStatus]);
 
@@ -547,38 +591,7 @@ export default function ChessAcademy({user=null,onSignOut}){
   // ════════════════════════════════════════════════════════════════
   //  UI COMPONENTS
   // ════════════════════════════════════════════════════════════════
-  function Board({brd,onSq,selSq,legalSqs=[],lastMove=null,noFlip=false,chkSq=null,hintSq2=null,sz=SQ,onPieceDragStart=null}){
-    const t=THEMES[theme],fl=flipped&&!noFlip,rows=fl?[...brd].reverse():brd;
-    const isPlayBoard=!noFlip,isMyTurnNow=gRef.current?.turn()===pCol;
-    return(
-      <div data-chess-board="1" style={{display:"inline-flex",flexDirection:"column",borderRadius:6,overflow:"hidden",boxShadow:"0 24px 72px rgba(0,0,0,.65),0 4px 12px rgba(0,0,0,.4)",border:`2px solid ${t.bdr}`,outline:isPlayBoard&&gStatus==="playing"?(isMyTurnNow?"2px solid rgba(200,168,75,0.65)":"2px solid rgba(200,168,75,0.12)"):"2px solid transparent",outlineOffset:"3px",transition:"outline-color .4s ease",boxSizing:"border-box",userSelect:"none",WebkitUserSelect:"none"}}>
-        {rows.map((rowData,ri)=>{
-          const bRow=fl?7-ri:ri,rank=8-bRow,dispRow=fl?[...rowData].reverse():rowData;
-          return(
-            <div key={ri} style={{display:"flex"}}>
-              {showCoords&&<div style={{width:18,height:sz,display:"flex",alignItems:"center",justifyContent:"center",background:"#0A0908",fontSize:9,color:"#555",fontFamily:"monospace",fontWeight:700,flexShrink:0}}>{rank}</div>}
-              {dispRow.map((piece,ci)=>{
-                const bCol=fl?7-ci:ci,sq=`${String.fromCharCode(97+bCol)}${rank}`;
-                const isLight=(bRow+bCol)%2!==0,isSel=selSq===sq,isLeg=legalSqs.includes(sq);
-                const isLF=lastMove?.from===sq,isLT=lastMove?.to===sq,isChk=chkSq===sq,isHint=hintSq2===sq;
-                const pk=piece?`${piece.color}${piece.type.toUpperCase()}`:null,isW=piece?.color==="w";
-                const isBeingDragged=dragRef.current?.from===sq;
-                let bg=isLight?t.l:t.d;if(isSel)bg=t.sel;else if(isLF||isLT)bg=t.last;if(isChk)bg="rgba(220,60,40,.72)";
-                return(
-                  <div key={ci} onClick={()=>onSq(sq)} className="board-sq" style={{width:sz,height:sz,background:bg,cursor:onPieceDragStart&&piece?"grab":"pointer",display:"flex",alignItems:"center",justifyContent:"center",position:"relative",transition:"background .08s",outline:isSel?"2.5px solid rgba(255,255,0,.95)":isHint?"2.5px solid rgba(76,175,130,.9)":"none",outlineOffset:"-2.5px",boxSizing:"border-box",animation:isLT?"sqFlash .45s ease-out":"none"}}>
-                    {isLeg&&!piece&&<div style={{width:Math.round(sz*.34),height:Math.round(sz*.34),borderRadius:"50%",background:t.hint,pointerEvents:"none"}}/>}
-                    {isLeg&&piece&&<div style={{position:"absolute",inset:0,boxShadow:`inset 0 0 0 4px ${t.hint}`,pointerEvents:"none",borderRadius:2}}/>}
-                    {piece&&<span className="chess-piece" onMouseDown={onPieceDragStart?(e)=>{e.stopPropagation();onPieceDragStart(e,sq);}:undefined} onTouchStart={onPieceDragStart?(e)=>{e.stopPropagation();onPieceDragStart(e,sq);}:undefined} style={{fontSize:Math.round(sz*.82),lineHeight:1,userSelect:"none",color:isW?"#fff":"#0A0808",textShadow:isW?"0 0 6px #000,0 2px 8px rgba(0,0,0,.95)":"0 0 3px rgba(255,255,255,.25),0 1px 5px rgba(0,0,0,.5)",position:"relative",zIndex:1,opacity:isBeingDragged?0:1,cursor:onPieceDragStart?"grab":"default",transition:"opacity .05s",WebkitUserSelect:"none",touchAction:"none"}}>{UNI[pk]}</span>}
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })}
-        {showCoords&&(<div style={{display:"flex",background:"#0A0908"}}><div style={{width:18}}/>{Array.from({length:8},(_,i)=>(<div key={i} style={{width:sz,textAlign:"center",fontSize:9,color:"#555",padding:"3px 0",fontFamily:"monospace",fontWeight:700}}>{String.fromCharCode(97+(fl?7-i:i))}</div>))}</div>)}
-      </div>
-    );
-  }
+
 
   function TutorChat({height=260,placeholder="Ask your chess tutor…"}){
     const quickP=screen==="learn"?[`Explain "${curLesson?.title}"`,`Any tips?`,"What's the idea here?"]:screen==="puzzles"?["Give me a hint","What tactic is this?","Explain the solution"]:["Best move?","What's my plan?","Evaluate the position"];
@@ -788,7 +801,7 @@ export default function ChessAcademy({user=null,onSignOut}){
           {["fast","normal","slow"].map(s=>(<button key={s} onClick={()=>setAnimSpd(s)} style={{flex:1,padding:"9px",fontSize:13,background:animSpd===s?"rgba(200,168,75,0.12)":"rgba(255,255,255,0.04)",color:animSpd===s?"#C8A84B":"#8C8476",border:"none",borderRadius:10,cursor:"pointer",textTransform:"capitalize",outline:animSpd===s?"2px solid rgba(200,168,75,0.4)":"2px solid transparent",fontFamily:"var(--font-sans)",fontWeight:animSpd===s?700:400}}>{s}</button>))}
         </div>
       </div>
-      <button onClick={async()=>{setDoneLessons(new Set());setStats({w:0,l:0,d:0});setSolvedPz(new Set());setStreak(0);try{await window.storage?.set("chess_v2","{}");}catch{}}} style={{width:"100%",padding:11,background:"rgba(224,85,85,0.08)",color:"#E05555",border:"1px solid rgba(224,85,85,0.2)",borderRadius:12,fontSize:14,cursor:"pointer",marginTop:8,fontFamily:"var(--font-sans)"}}>Reset All Progress</button>
+      <button onClick={async()=>{setDoneLessons(new Set());setStats({w:0,l:0,d:0});setSolvedPz(new Set());setStreak(0);try{localStorage.removeItem("chess_v2");}catch{}}} style={{width:"100%",padding:11,background:"rgba(224,85,85,0.08)",color:"#E05555",border:"1px solid rgba(224,85,85,0.2)",borderRadius:12,fontSize:14,cursor:"pointer",marginTop:8,fontFamily:"var(--font-sans)"}}>Reset All Progress</button>
     </div>
     <BottomNav/>
   </>);
@@ -899,7 +912,7 @@ export default function ChessAcademy({user=null,onSignOut}){
             <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
               <div style={{width:8,height:SQ*8+(showCoords?22:0),background:"rgba(255,255,255,0.06)",borderRadius:4,overflow:"hidden",flexShrink:0,display:"flex",flexDirection:"column-reverse"}}><div style={{height:`${evalBar}%`,background:"rgba(255,255,255,0.82)",transition:"height .7s ease",borderRadius:4}}/></div>
               <div style={{position:"relative"}}>
-                <Board brd={board} onSq={handleSqClick} selSq={sel} legalSqs={legal} lastMove={lastMv} chkSq={chkSq} hintSq2={hintSq} myTurn={isMyTurn} onPieceDragStart={playDragStart}/>
+                <Board brd={board} onSq={handleSqClick} selSq={sel} legalSqs={legal} lastMove={lastMv} chkSq={chkSq} hintSq2={hintSq} onPieceDragStart={playDragStart} theme={theme} flipped={flipped} showCoords={showCoords} draggingFrom={ghostState?.from} myTurn={gameMode==="p2p"?true:isMyTurn} gameOver={gStatus!=="playing"&&gStatus!=="idle"}/>
                 {lastBadge&&<div style={{position:"absolute",top:-16,right:-8,zIndex:10,background:lastBadge.bg,borderTop:`1px solid ${lastBadge.color}55`,borderRadius:20,padding:"5px 12px",display:"flex",alignItems:"center",gap:5,animation:"badgePop .35s cubic-bezier(.34,1.56,.64,1) forwards",boxShadow:"0 4px 16px rgba(0,0,0,0.4)"}}><span style={{fontSize:13,fontWeight:700,color:lastBadge.color,letterSpacing:"-.3px"}}>{lastBadge.sym}</span><span style={{fontSize:12,fontWeight:600,color:lastBadge.color}}>{lastBadge.label}</span></div>}
               </div>
             </div>
@@ -969,7 +982,7 @@ export default function ChessAcademy({user=null,onSignOut}){
       ):(
         <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
           <div style={{flexShrink:0}}>
-            <Board brd={pzBoard} onSq={handlePzClick} selSq={pzSel} legalSqs={pzLegal} lastMove={pzLastMv} noFlip={true} onPieceDragStart={pzDragStart}/>
+            <Board brd={pzBoard} onSq={handlePzClick} selSq={pzSel} legalSqs={pzLegal} lastMove={pzLastMv} noFlip={true} onPieceDragStart={pzDragStart} theme={theme} flipped={flipped} showCoords={showCoords} draggingFrom={ghostState?.from}/>
             <div style={{marginTop:8,display:"flex",gap:6}}>
               <button onClick={()=>randomPuzzle()} style={{flex:1,padding:"8px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:100,cursor:"pointer",color:"#8C8476",fontFamily:"var(--font-sans)"}}>↺ Next</button>
               <button onClick={()=>setPzHint(true)} disabled={pzHint} style={{flex:1,padding:"8px",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:100,cursor:"pointer",color:"#8C8476",opacity:pzHint?0.4:1,fontFamily:"var(--font-sans)"}}>💡 Hint</button>
@@ -1018,7 +1031,7 @@ export default function ChessAcademy({user=null,onSignOut}){
       <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
         <div style={{flexShrink:0}}>
           <div style={{fontSize:11,color:"#504C45",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:600}}>Interactive board</div>
-          <Board brd={lBoard} onSq={handleLClick} selSq={lSel} legalSqs={lLegal} lastMove={null} noFlip={true} onPieceDragStart={learnDragStart}/>
+          <Board brd={lBoard} onSq={handleLClick} selSq={lSel} legalSqs={lLegal} lastMove={null} noFlip={true} onPieceDragStart={learnDragStart} theme={theme} flipped={flipped} showCoords={showCoords} draggingFrom={ghostState?.from}/>
           <button onClick={()=>loadLesson(curLesson)} style={{marginTop:7,width:"100%",padding:"7px 0",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:100,cursor:"pointer",color:"#8C8476",fontFamily:"var(--font-sans)"}}>↺ Reset position</button>
         </div>
         <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",gap:10}}>
