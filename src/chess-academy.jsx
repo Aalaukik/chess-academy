@@ -524,8 +524,6 @@ export default function ChessAcademy({user=null,onSignOut}){
     const systemPrompt=`You are an encouraging expert chess tutor. ${ctx}Position FEN: ${fen}. Recent moves: ${mvs}. Be warm, concise (2-4 sentences), use algebraic notation, give actionable advice.`;
     const cacheKey=`${q}|${fen.slice(0,20)}`;
     if(tutorCache.current[cacheKey]){setMsgs(p=>[...p,{role:"user",content:q},{role:"assistant",content:tutorCache.current[cacheKey]}]);setTutIn("");return;}
-    const newMsgs
-    if(!apiKey){setMsgs(p=>[...p,{role:"assistant",content:"⚠️ Tutor not configured. Add VITE_GROQ_KEY to Vercel environment variables."}]);return;}
     const newMsgs=[...msgs,{role:"user",content:q}];setMsgs(newMsgs);setTutIn("");setTutBusy(true);
     const MODELS=["llama-3.1-8b-instant","llama3-8b-8192","gemma2-9b-it","mixtral-8x7b-32768"];
     try{
