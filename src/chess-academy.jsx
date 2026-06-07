@@ -122,7 +122,7 @@ const PUZZLES=[
   {id:"p3",cat:"Mate in 1",diff:1,fen:"r5k1/p4ppp/8/8/8/8/PP3PPP/4R1K1 w - - 0 1",sol:["Re8#"],hint:"Aim for the 8th rank — the king has nowhere to go!"},
   {id:"p4",cat:"Mate in 1",diff:1,fen:"5k2/8/5K2/8/8/8/8/7R w - - 0 1",sol:["Rh8#"],hint:"Use your rook — the king is trapped on the edge."},
   {id:"p5",cat:"Mate in 2",diff:2,fen:"r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/2N2N2/PPPP1PPP/R1BQK2R w KQkq - 4 4",sol:["Bxf7+","Ke7","Nd5#"],hint:"The bishop capture on f7 gives check. What follows forces mate in two?"},
-  {id:"p6",cat:"Mate in 2",diff:2,fen:"6k1/pp3ppp/8/8/2r5/4R1P1/PP3P1P/6K1 w - - 0 1",sol:["Re8+","Rxe8","Rxe8#"],hint:"Force the king to the back rank with a rook check."},
+  {id:"p6",cat:"Mate in 2",diff:2,fen:"6k1/pp3ppp/8/8/2r5/4R1P1/PP3P1P/6K1 w - - 0 1",sol:["Re8+","f8=Q","Rxf8#"],hint:"Force the rook to rank 8 — black must promote to block, then finish it."},
   {id:"p7",cat:"Fork",diff:2,fen:"r1bqkb1r/ppp2ppp/2np1n2/4p3/2B1P3/2N2N2/PPPP1PPP/R1BQK2R w KQkq - 0 5",sol:["Nd5"],hint:"Your knight on f3 can leap to a powerful central square, attacking two pieces at once!"},
   {id:"p8",cat:"Fork",diff:2,fen:"4k3/8/8/3n4/3N4/8/8/4K3 w - - 0 1",sol:["Nc6+"],hint:"Move the knight to fork the king and the enemy knight simultaneously."},
   {id:"p9",cat:"Fork",diff:3,fen:"r2qkb1r/pp2pppp/2np1n2/8/3NP3/2N5/PPP2PPP/R1BQKB1R w KQkq - 0 7",sol:["Nxc6"],hint:"The knight capture wins material by attacking multiple pieces."},

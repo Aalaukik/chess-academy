@@ -171,6 +171,7 @@ export default function ProfileScreen({ user, stats, doneLessons, solvedPz, stre
                       {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}`}
                     </span>
                     <span style={{ flex: 1, fontSize: 14, fontWeight: isMe ? 700 : 500, color: isMe ? C.gold : C.text1 }}>{row.username}</span>
+                    <span style={{ fontSize: 13, color: C.gold, fontWeight: 700, minWidth: 44, textAlign: 'right' }}>{row.elo ?? 1200}</span>
                     <span style={{ fontSize: 13, color: C.green, fontWeight: 600 }}>{row.wins}W</span>
                     <span style={{ fontSize: 12, color: C.text2 }}>{row.win_rate}%</span>
                     <span style={{ fontSize: 11, color: '#C04A90' }}>🧩 {row.puzzles_solved ?? 0}</span>

@@ -39,7 +39,7 @@ function mkSound() {
 }
 const SND = mkSound()
 
-function Board({ brd, onSq, selSq, legalSqs=[], lastMove=null, chkSq=null, flipped=false, theme='walnut', showCoords=true, isMyTurn=false, gameOver=false, onPieceDragStart=null }) {
+function Board({ brd, onSq, selSq, legalSqs=[], lastMove=null, chkSq=null, flipped=false, theme='walnut', showCoords=true, isMyTurn=false, gameOver=false, onPieceDragStart=null, draggingFrom=null }) {
   const t = THEMES[theme] ?? THEMES.walnut
   const fl = flipped
   const rows = fl ? [...brd].reverse() : brd
@@ -100,7 +100,7 @@ function Board({ brd, onSq, selSq, legalSqs=[], lastMove=null, chkSq=null, flipp
                         textShadow: isW ? '0 0 6px #000,0 2px 8px rgba(0,0,0,.95)' : '0 0 3px rgba(255,255,255,.25)',
                         position:'relative', zIndex:1, WebkitUserSelect:'none', touchAction:'none',
                         cursor: onPieceDragStart ? 'grab' : 'default',
-                        opacity: onPieceDragStart?.__draggingFrom===sq ? 0 : 1,
+                        opacity: draggingFrom===sq ? 0 : 1,
                       }}>
                       {UNI[pk]}
                     </span>
@@ -144,7 +144,7 @@ export default function OnlinePlayScreen({ gameData, user, onBack, ChessLib, loa
   const moveListRef   = useRef(null)
   const gameStartTime = useRef(Date.now())
   const savedRef      = useRef(false)
-  const endGameCalledRef = useRef(false)
+  const gameOverRef   = useRef(false)
 
   const [promoFrom, setPromoFrom] = useState(null)
   const [promoTo,   setPromoTo]   = useState(null)
@@ -397,8 +397,8 @@ export default function OnlinePlayScreen({ gameData, user, onBack, ChessLib, loa
   }
 
   async function endGame(result, reason, g, writeToDb = false) {
-    if (endGameCalledRef.current) return
-    endGameCalledRef.current = true
+    if (gameOverRef.current) return
+    gameOverRef.current = true
     clearInterval(timerRef.current)
     setGStatus('complete'); setWinner(result); setResultReason(reason)
     const iWon = (result==='white'&&myColor==='w') || (result==='black'&&myColor==='b')
@@ -540,7 +540,7 @@ export default function OnlinePlayScreen({ gameData, user, onBack, ChessLib, loa
             )}
           </div>
 
-          <Board brd={board} onSq={handleSqClick} selSq={sel} legalSqs={legal} lastMove={lastMv} chkSq={chkSq} flipped={isFlipped} theme={theme} showCoords={showCoords} isMyTurn={myTurnNow && gStatus==='playing'} gameOver={gStatus==='complete'} onPieceDragStart={gStatus==='playing' ? startDrag : null} />
+          <Board brd={board} onSq={handleSqClick} selSq={sel} legalSqs={legal} lastMove={lastMv} chkSq={chkSq} flipped={isFlipped} theme={theme} showCoords={showCoords} isMyTurn={myTurnNow && gStatus==='playing'} gameOver={gStatus==='complete'} onPieceDragStart={gStatus==='playing' ? startDrag : null} draggingFrom={ghostState?.from} />
 
           {/* My row */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 6, minHeight: 28 }}>
