@@ -214,17 +214,24 @@ export default function ChessAcademy({user=null,onSignOut}){
   const dragHandlersRef=useRef({});
   const [ghostState,setGhostState]=useState(null);
   const [shareModal,setShareModal]=useState(false);
+  const dlRef=useRef(doneLessons);const spRef=useRef(solvedPz);const skRef=useRef(streak);const stRef=useRef(stats);const elRef=useRef(elo);
+  useEffect(()=>{dlRef.current=doneLessons;},[doneLessons]);
+  useEffect(()=>{spRef.current=solvedPz;},[solvedPz]);
+  useEffect(()=>{skRef.current=streak;},[streak]);
+  useEffect(()=>{stRef.current=stats;},[stats]);
+  useEffect(()=>{elRef.current=elo;},[elo]);
 
   useEffect(()=>{import("https://esm.sh/chess.js@1.1.0").then(m=>{ChessLib.current=m.Chess;setLoaded(true);}).catch(()=>setLoadErr(true));},[]);
 
   useEffect(()=>{
     if(user) return;
-    (async()=>{try{const r=await window.storage?.get("chess_v2");if(r?.value){const p=JSON.parse(r.value);if(p.done)setDoneLessons(new Set(p.done));if(p.solved)setSolvedPz(new Set(p.solved));if(p.streak)setStreak(p.streak);if(p.stats)setStats(p.stats);if(p.elo)setElo(p.elo);}}catch{}})();
+    (async()=>{try{const r=await window.storage?.get("chess_v2");if(r?.value){const p=JSON.parse(r.value);if(p.done)setDoneLessons(new Set(p.done));if(p.solved)setSolvedPz(new Set(p.solved));if(p.streak)setStreak(p.streak);if(p.stats)setStats(p.stats);if(p.elo!=null)setElo(p.elo);}}catch{}})();
   },[]);
 
-  async function saveProgress(dl=doneLessons,sp=solvedPz,sk=streak,st=stats,el=elo){
+  async function saveProgress(dl,sp,sk,st,el){
     if(user) return;
-    try{await window.storage?.set("chess_v2",JSON.stringify({done:[...dl],solved:[...sp],streak:sk,stats:st,elo:el}));}catch{}
+    const _dl=dl??dlRef.current,_sp=sp??spRef.current,_sk=sk??skRef.current,_st=st??stRef.current,_el=el??elRef.current;
+    try{await window.storage?.set("chess_v2",JSON.stringify({done:[..._dl],solved:[..._sp],streak:_sk,stats:_st,elo:_el}));}catch{}
   }
 
   const gameStartTime=useRef(null);
@@ -440,7 +447,7 @@ export default function ChessAcademy({user=null,onSignOut}){
   }
 
   function undoMove(){const g=gRef.current;if(!g||hist.length<2)return;g.undo();g.undo();syncGame(g);setSel(null);setLegal([]);setLastMv(null);setHintSq(null);setGStatus("playing");setWinner(null);}
-  function resign(){const g=gRef.current;const resignColor=gameMode==="p2p"?(g?.turn()||"w"):pCol;const w=resignColor==="w"?"Black":"White";setGStatus("resign");setWinner(w);setTimerOn(false);play("over");if(gameMode==="ai"){const ns={...stats,l:stats.l+1};setStats(ns);saveProgress(undefined,undefined,undefined,ns);}}
+  function resign(){const g=gRef.current;const resignColor=gameMode==="p2p"?(g?.turn()||"w"):pCol;const w=resignColor==="w"?"Black":"White";setGStatus("resign");setWinner(w);setTimerOn(false);play("over");const ns={...stats,l:stats.l+1};setStats(ns);saveProgress(undefined,undefined,undefined,ns);}
   function showHint(){const g=gRef.current;if(!g||gStatus!=="playing")return;const mv=getAIMove(g,Math.min(diff+1,4));if(mv){const m=g.moves({verbose:true}).find(m=>m.san===mv);if(m)setHintSq(m.from);else{const m2=g.moves({verbose:true})[0];if(m2)setHintSq(m2.from);}}}
 
   useEffect(()=>{
@@ -495,7 +502,7 @@ export default function ChessAcademy({user=null,onSignOut}){
       const expected=pz.sol[pzMvIdx];const r=g.move({from:pzSel,to:sq,promotion:"q"});
       if(!r){setPzSel(null);setPzLegal([]);return;}
       setPzLastMv({from:r.from,to:r.to});setPzBoard([...g.board()]);setPzSel(null);setPzLegal([]);
-      if(r.san===expected||r.from+r.to===expected||r.from+r.to+r.promotion===expected){
+      if(r.san===expected||r.from+r.to===expected||r.from+r.to+(r.promotion||"")===expected){
         const next=pzMvIdx+1;
         if(next>=pz.sol.length){setPzStatus("solved");play("pzOk");const sk=streak+1;setStreak(sk);const ns=new Set(solvedPz);ns.add(pz.id);setSolvedPz(ns);saveProgress(undefined,ns,sk,undefined);}
         else{setPzMvIdx(next);setPzStatus("correct");play("move");if(pz.sol[next])setTimeout(()=>{const opp=g.move(pz.sol[next]);if(opp){setPzLastMv({from:opp.from,to:opp.to});setPzBoard([...g.board()]);setPzMvIdx(next+1);setPzStatus("idle");}},600);}
@@ -517,7 +524,7 @@ export default function ChessAcademy({user=null,onSignOut}){
     const systemPrompt=`You are an encouraging expert chess tutor. ${ctx}Position FEN: ${fen}. Recent moves: ${mvs}. Be warm, concise (2-4 sentences), use algebraic notation, give actionable advice.`;
     const cacheKey=`${q}|${fen.slice(0,20)}`;
     if(tutorCache.current[cacheKey]){setMsgs(p=>[...p,{role:"user",content:q},{role:"assistant",content:tutorCache.current[cacheKey]}]);setTutIn("");return;}
-    const apiKey=import.meta.env.VITE_GROQ_KEY;
+    const newMsgs
     if(!apiKey){setMsgs(p=>[...p,{role:"assistant",content:"⚠️ Tutor not configured. Add VITE_GROQ_KEY to Vercel environment variables."}]);return;}
     const newMsgs=[...msgs,{role:"user",content:q}];setMsgs(newMsgs);setTutIn("");setTutBusy(true);
     const MODELS=["llama-3.1-8b-instant","llama3-8b-8192","gemma2-9b-it","mixtral-8x7b-32768"];
@@ -525,7 +532,7 @@ export default function ChessAcademy({user=null,onSignOut}){
       let reply=null,lastErr="";
       for(const model of MODELS){
         let result;
-        try{const res=await fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${apiKey}`},body:JSON.stringify({model,messages:[{role:"system",content:systemPrompt},...newMsgs.map(m=>({role:m.role==="assistant"?"assistant":"user",content:m.content}))],max_tokens:400,temperature:0.7})});result={status:res.status,data:await res.json()};}catch{lastErr="Network error";continue;}
+        try{const res=await fetch("/api/groq",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model,messages:[{role:"system",content:systemPrompt},...newMsgs.map(m=>({role:m.role==="assistant"?"assistant":"user",content:m.content}))],max_tokens:400,temperature:0.7})});result={status:res.status,data:await res.json()};}catch{lastErr="Network error";continue;}
         const{status,data}=result;
         if(status===401)throw new Error("Invalid API key.");
         if(status===429)throw new Error("Rate limit — wait 30s and try again.");

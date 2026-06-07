@@ -144,6 +144,7 @@ export default function OnlinePlayScreen({ gameData, user, onBack, ChessLib, loa
   const moveListRef   = useRef(null)
   const gameStartTime = useRef(Date.now())
   const savedRef      = useRef(false)
+  const endGameCalledRef = useRef(false)
 
   const [promoFrom, setPromoFrom] = useState(null)
   const [promoTo,   setPromoTo]   = useState(null)
@@ -396,7 +397,8 @@ export default function OnlinePlayScreen({ gameData, user, onBack, ChessLib, loa
   }
 
   async function endGame(result, reason, g, writeToDb = false) {
-    if (gStatus === 'complete') return
+    if (endGameCalledRef.current) return
+    endGameCalledRef.current = true
     clearInterval(timerRef.current)
     setGStatus('complete'); setWinner(result); setResultReason(reason)
     const iWon = (result==='white'&&myColor==='w') || (result==='black'&&myColor==='b')
