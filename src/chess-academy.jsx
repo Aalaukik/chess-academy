@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from "react";
+import { Chess } from "chess.js";
 import { useSupabaseProgress } from "./useSupabaseProgress";
+import { supabase } from "./supabase";
 import ProfileScreen from "./ProfileScreen";
 import OnlineScreen from "./OnlineScreen";
 import OnlinePlayScreen from "./OnlinePlayScreen";
@@ -257,7 +259,7 @@ export default function ChessAcademy({user=null,onSignOut}){
   useEffect(()=>{stRef.current=stats;},[stats]);
   useEffect(()=>{elRef.current=elo;},[elo]);
 
-  useEffect(()=>{import("https://esm.sh/chess.js@1.1.0").then(m=>{ChessLib.current=m.Chess;setLoaded(true);}).catch(()=>setLoadErr(true));},[]);
+  useEffect(()=>{ChessLib.current=Chess;setLoaded(true);},[]);
 
   useEffect(()=>{
     if(user) return;
@@ -377,7 +379,7 @@ export default function ChessAcademy({user=null,onSignOut}){
       if(r.san===expected||r.from+r.to===expected||r.from+r.to+(r.promotion||"")===expected){
         const next=pzMvIdx+1;
         if(next>=pz.sol.length){setPzStatus("solved");play("pzOk");const sk=streak+1;setStreak(sk);const ns=new Set(solvedPz);ns.add(pz.id);setSolvedPz(ns);saveProgress(undefined,ns,sk,undefined);}
-        else{setPzMvIdx(next);setPzStatus("correct");play("move");if(pz.sol[next])setTimeout(()=>{const opp=g2.move(pz.sol[next]);if(opp){setPzLastMv({from:opp.from,to:opp.to});setPzBoard([...g2.board()]);setPzMvIdx(next+1);setPzStatus("idle");}},600);}
+        else{setPzMvIdx(next);setPzStatus("correct");play("move");if(pz.sol[next])setTimeout(()=>{const opp=g2.move(pz.sol[next]);if(opp){setPzLastMv({from:opp.from,to:opp.to});setPzBoard([...g2.board()]);setPzMvIdx(next+1);setPzStatus("idle");}else{setPzStatus("idle");}},600);}
       }else{g2.undo();setPzBoard([...g2.board()]);setPzLastMv(null);setPzStatus("wrong");play("pzFail");const sk=0;setStreak(sk);saveProgress(undefined,undefined,sk,undefined);}
     },false);
   }
@@ -487,16 +489,16 @@ export default function ChessAcademy({user=null,onSignOut}){
   function showHint(){const g=gRef.current;if(!g||gStatus!=="playing")return;const mv=getAIMove(g,Math.min(diff+1,4));if(mv){const m=g.moves({verbose:true}).find(m=>m.san===mv);if(m)setHintSq(m.from);else{const m2=g.moves({verbose:true})[0];if(m2)setHintSq(m2.from);}}}
 
   useEffect(()=>{
-    if(gStatus==="checkmate"||gStatus==="stalemate"||gStatus==="draw"||gStatus==="resign"){
+    if(gStatus==="checkmate"||gStatus==="stalemate"||gStatus==="draw"||gStatus==="resign"||gStatus==="timeout"){
       const iWon=winner===(pCol==="w"?"White":"Black");
       if(gameMode==="ai"){
-        const result=gStatus==="checkmate"?(iWon?1:0):gStatus==="resign"?0:0.5;
+        const result=gStatus==="checkmate"||gStatus==="timeout"?(iWon?1:0):gStatus==="resign"?0:0.5;
         const newElo=calcNewElo(elo,DIFF_ELO[diff],result);setElo(newElo);saveProgress(undefined,undefined,undefined,undefined,newElo);
-        const sessionResult=gStatus==="checkmate"?(iWon?"win":"loss"):gStatus==="resign"?"loss":"draw";
+        const sessionResult=gStatus==="checkmate"?(iWon?"win":"loss"):gStatus==="resign"?"loss":gStatus==="timeout"?(iWon?"win":"timeout"):"draw";
         const durationS=gameStartTime.current?Math.round((Date.now()-gameStartTime.current)/1000):0;
         saveGame({result:sessionResult,playerColor:pCol,difficulty:diff,moves:hist.map(m=>m.san),opening,durationS});
-        if(gStatus==="checkmate"&&iWon){play("win");const ns={...stats,w:stats.w+1};setStats(ns);saveProgress(undefined,undefined,undefined,ns);}
-        else if(gStatus==="checkmate"){play("over");const ns={...stats,l:stats.l+1};setStats(ns);saveProgress(undefined,undefined,undefined,ns);}
+        if((gStatus==="checkmate"||gStatus==="timeout")&&iWon){play("win");const ns={...stats,w:stats.w+1};setStats(ns);saveProgress(undefined,undefined,undefined,ns);}
+        else if(gStatus==="checkmate"||gStatus==="timeout"){play("over");const ns={...stats,l:stats.l+1};setStats(ns);saveProgress(undefined,undefined,undefined,ns);}
         else if(gStatus!=="resign"){play("over");const ns={...stats,d:stats.d+1};setStats(ns);saveProgress(undefined,undefined,undefined,ns);}
         else{play("over");}
       } else {
@@ -549,7 +551,7 @@ export default function ChessAcademy({user=null,onSignOut}){
       if(r.san===expected||r.from+r.to===expected||r.from+r.to+(r.promotion||"")===expected){
         const next=pzMvIdx+1;
         if(next>=pz.sol.length){setPzStatus("solved");play("pzOk");const sk=streak+1;setStreak(sk);const ns=new Set(solvedPz);ns.add(pz.id);setSolvedPz(ns);saveProgress(undefined,ns,sk,undefined);}
-        else{setPzMvIdx(next);setPzStatus("correct");play("move");if(pz.sol[next])setTimeout(()=>{const opp=g.move(pz.sol[next]);if(opp){setPzLastMv({from:opp.from,to:opp.to});setPzBoard([...g.board()]);setPzMvIdx(next+1);setPzStatus("idle");}},600);}
+        else{setPzMvIdx(next);setPzStatus("correct");play("move");if(pz.sol[next])setTimeout(()=>{const opp=g.move(pz.sol[next]);if(opp){setPzLastMv({from:opp.from,to:opp.to});setPzBoard([...g.board()]);setPzMvIdx(next+1);setPzStatus("idle");}else{setPzStatus("idle");}},600);}
       }else{g.undo();setPzBoard([...g.board()]);setPzLastMv(null);setPzStatus("wrong");play("pzFail");const sk=0;setStreak(sk);saveProgress(undefined,undefined,sk,undefined);}
       return;
     }
@@ -801,7 +803,11 @@ export default function ChessAcademy({user=null,onSignOut}){
           {["fast","normal","slow"].map(s=>(<button key={s} onClick={()=>setAnimSpd(s)} style={{flex:1,padding:"9px",fontSize:13,background:animSpd===s?"rgba(200,168,75,0.12)":"rgba(255,255,255,0.04)",color:animSpd===s?"#C8A84B":"#8C8476",border:"none",borderRadius:10,cursor:"pointer",textTransform:"capitalize",outline:animSpd===s?"2px solid rgba(200,168,75,0.4)":"2px solid transparent",fontFamily:"var(--font-sans)",fontWeight:animSpd===s?700:400}}>{s}</button>))}
         </div>
       </div>
-      <button onClick={async()=>{setDoneLessons(new Set());setStats({w:0,l:0,d:0});setSolvedPz(new Set());setStreak(0);try{localStorage.removeItem("chess_v2");}catch{}}} style={{width:"100%",padding:11,background:"rgba(224,85,85,0.08)",color:"#E05555",border:"1px solid rgba(224,85,85,0.2)",borderRadius:12,fontSize:14,cursor:"pointer",marginTop:8,fontFamily:"var(--font-sans)"}}>Reset All Progress</button>
+      <button onClick={async()=>{
+        setDoneLessons(new Set());setStats({w:0,l:0,d:0});setSolvedPz(new Set());setStreak(0);setElo(1200);
+        try{localStorage.removeItem("chess_v2");}catch{}
+        if(user){await supabase.from("progress").upsert({user_id:user.id,completed_lessons:[],solved_puzzles:[],puzzle_streak:0,wins:0,losses:0,draws:0,elo:1200,updated_at:new Date().toISOString()});}
+      }} style={{width:"100%",padding:11,background:"rgba(224,85,85,0.08)",color:"#E05555",border:"1px solid rgba(224,85,85,0.2)",borderRadius:12,fontSize:14,cursor:"pointer",marginTop:8,fontFamily:"var(--font-sans)"}}>Reset All Progress</button>
     </div>
     <BottomNav/>
   </>);
