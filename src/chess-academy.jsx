@@ -119,19 +119,19 @@ const LESSONS=[
   {id:16,track:"advanced",icon:"♗",title:"Opening Systems",fen:"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",body:"Rather than memorizing every variation, master the principles behind openings: develop all pieces to active squares, fight for the center, castle early, then connect your rooks. Study 1–2 openings deeply with understanding.",tip:"Always ask 'why?' for every opening move. Understanding the plan behind each move is far more powerful than memorizing sequences."},
 ];
 const PUZZLES=[
-  {id:"p1",cat:"Mate in 1",diff:1,fen:"r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5Q2/PPPP1PPP/RNB1K1NR w KQkq - 4 4",sol:["Qxf7#"],hint:"Your queen and bishop are perfectly lined up at f7 — can you deliver checkmate?"},
+  {id:"p1",cat:"Mate in 1",diff:1,fen:"r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4",sol:["Qxf7#"],hint:"The queen on h5 and bishop on c4 combine for the Scholar's Mate — aim at f7!"},
   {id:"p2",cat:"Mate in 1",diff:1,fen:"6k1/5ppp/8/8/8/8/5PPP/4R1K1 w - - 0 1",sol:["Re8#"],hint:"The rook has a clear path to the back rank — deliver checkmate!"},
   {id:"p3",cat:"Mate in 1",diff:1,fen:"r5k1/p4ppp/8/8/8/8/PP3PPP/4R1K1 w - - 0 1",sol:["Re8#"],hint:"Aim for the 8th rank — the king has nowhere to go!"},
   {id:"p4",cat:"Mate in 1",diff:1,fen:"5k2/8/5K2/8/8/8/8/7R w - - 0 1",sol:["Rh8#"],hint:"Use your rook — the king is trapped on the edge."},
-  {id:"p5",cat:"Mate in 2",diff:2,fen:"r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/2N2N2/PPPP1PPP/R1BQK2R w KQkq - 4 4",sol:["Bxf7+","Ke7","Nd5#"],hint:"The bishop capture on f7 gives check. What follows forces mate in two?"},
-  {id:"p6",cat:"Mate in 2",diff:2,fen:"6k1/pp3ppp/8/8/2r5/4R1P1/PP3P1P/6K1 w - - 0 1",sol:["Re8+","f8=Q","Rxf8#"],hint:"Force the rook to rank 8 — black must promote to block, then finish it."},
+  {id:"p5",cat:"Mate in 2",diff:2,fen:"4k3/4Q3/4K3/8/8/8/8/8 w - - 0 1",sol:["Qf7+","Kd8","Qd7#"],hint:"Drive the king out of the center with a check — then the queen closes the net."},
+  {id:"p6",cat:"Mate in 2",diff:2,fen:"k7/8/2K5/8/8/8/8/R7 w - - 0 1",sol:["Ra6+","Kb8","Ra8#"],hint:"Cut the king off with a file check — then finish it on the back rank."},
   {id:"p7",cat:"Fork",diff:2,fen:"r1bqkb1r/ppp2ppp/2np1n2/4p3/2B1P3/2N2N2/PPPP1PPP/R1BQK2R w KQkq - 0 5",sol:["Nd5"],hint:"Your knight on f3 can leap to a powerful central square, attacking two pieces at once!"},
-  {id:"p8",cat:"Fork",diff:2,fen:"4k3/8/8/3n4/3N4/8/8/4K3 w - - 0 1",sol:["Nc6+"],hint:"Move the knight to fork the king and the enemy knight simultaneously."},
+  {id:"p8",cat:"Fork",diff:2,fen:"8/2r1k3/8/8/5N2/8/8/4K3 w - - 0 1",sol:["Nd5+"],hint:"The knight leaps to the center — attacking the king and the rook simultaneously!"},
   {id:"p9",cat:"Fork",diff:3,fen:"r2qkb1r/pp2pppp/2np1n2/8/3NP3/2N5/PPP2PPP/R1BQKB1R w KQkq - 0 7",sol:["Nxc6"],hint:"The knight capture wins material by attacking multiple pieces."},
   {id:"p10",cat:"Pin",diff:2,fen:"r2qkb1r/ppp2ppp/2np1n2/4p3/2B1P1b1/2N2N2/PPPP1PPP/R1BQK2R w KQkq - 0 6",sol:["Bxf7+"],hint:"The bishop on c4 eyes f7. A capture here creates a fork-pin between king and queen!"},
-  {id:"p11",cat:"Pin",diff:3,fen:"rnbqk2r/pppp1ppp/5n2/2b1p3/2B1P3/2N5/PPPP1PPP/R1BQK1NR w KQkq - 4 4",sol:["d3"],hint:"Solidify the center and set up a pin on the f6-knight through the bishop diagonal."},
-  {id:"p12",cat:"Skewer",diff:3,fen:"6k1/6pp/8/1b6/8/8/6PP/R5K1 w - - 0 1",sol:["Ra5"],hint:"Attack the bishop — when it moves to safety, look at what's behind it!"},
-  {id:"p13",cat:"Skewer",diff:3,fen:"8/8/1k6/8/1R6/8/8/6K1 w - - 0 1",sol:["Rb8+"],hint:"Give check with the rook — the king must move, revealing the piece behind."},
+  {id:"p11",cat:"Pin",diff:3,fen:"8/8/8/8/2n5/8/8/1B2K3 w - - 0 1",sol:["Ba2"],hint:"Slide the bishop onto the diagonal — the knight is absolutely pinned against its king and cannot move!"},
+  {id:"p12",cat:"Skewer",diff:3,fen:"1b6/8/8/1k6/8/8/8/R3K3 w - - 0 1",sol:["Rb1+"],hint:"Line up the rook on the b-file — the king must flee, and the bishop behind it pays the price."},
+  {id:"p13",cat:"Skewer",diff:3,fen:"r7/8/8/k7/8/8/8/1Q2K3 w - - 0 1",sol:["Qa1+"],hint:"Swing the queen to the a-file — skewer the king and win the rook hiding behind it."},
   {id:"p14",cat:"Back rank",diff:2,fen:"6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1",sol:["Rd8#"],hint:"The black king has no flight squares! The d-file is your highway to checkmate."},
   {id:"p15",cat:"Back rank",diff:2,fen:"5bk1/5ppp/8/8/8/3R4/5PPP/6K1 w - - 0 1",sol:["Rd8#"],hint:"The rook commands the back rank — the king is trapped by its own pieces!"},
   {id:"p16",cat:"Discovery",diff:3,fen:"r1bqk2r/ppp2ppp/3p1n2/4p3/1bB1P3/2N2N2/PPPP1PPP/R1BQK2R w KQkq - 0 5",sol:["Nd5"],hint:"Move the knight to discover an attack from the bishop behind it!"},
@@ -950,7 +950,7 @@ export default function ChessAcademy({user=null,onSignOut}){
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,marginTop:12}}>
               <button onClick={undoMove} disabled={hist.length<2||gameOver} style={{padding:"9px 0",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:100,cursor:hist.length<2||gameOver?"default":"pointer",color:"#8C8476",opacity:hist.length<2||gameOver?0.35:1,fontFamily:"var(--font-sans)",fontWeight:500}}>↩ Undo</button>
               <button onClick={showHint} disabled={gameOver||aiThink||gameMode==="p2p"} style={{padding:"9px 0",fontSize:12,background:hintSq?"rgba(200,168,75,0.1)":"rgba(255,255,255,0.04)",border:`1px solid ${hintSq?"rgba(200,168,75,0.4)":"rgba(255,255,255,0.07)"}`,borderRadius:100,cursor:"pointer",color:hintSq?"#C8A84B":"#8C8476",opacity:gameOver||aiThink||gameMode==="p2p"?0.35:1,fontFamily:"var(--font-sans)",fontWeight:500}}>💡 Hint</button>
-              <button onClick={resign} disabled={gameOver||hist.length<2} style={{padding:"9px 0",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:100,cursor:"pointer",color:"#8C8476",opacity:gameOver||hist.length<2?0.35:1,fontFamily:"var(--font-sans)",fontWeight:500}}>🏳 Resign</button>
+              <button onClick={resign} disabled={gameOver||hist.length<2} style={{padding:"9px 0",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:100,cursor:"pointer",color:"#8C8476",opacity:gameOver||hist.length<2?0.35:1,fontFamily:"var(--font-sans)",fontWeight:500}}>{gameMode==="p2p"?`🏳 ${gRef.current?.turn()==="w"?p2pNames.w:p2pNames.b} Resigns`:"🏳 Resign"}</button>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginTop:6}}>
               <button onClick={startGame} style={{padding:"9px 0",fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:100,cursor:"pointer",color:"#8C8476",fontFamily:"var(--font-sans)",fontWeight:500}}>↺ New Game</button>
