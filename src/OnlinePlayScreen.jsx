@@ -318,7 +318,7 @@ export default function OnlinePlayScreen({ gameData, user, onBack, ChessLib, loa
       },
     }
     const pk = `${piece.color}${piece.type.toUpperCase()}`
-    setGhostState({ x: clientX, y: clientY, pk, isW: piece.color === 'w' })
+    setGhostState({ x: clientX, y: clientY, pk, isW: piece.color === 'w', from: sq })
   }
 
   function onDragMove(e) {

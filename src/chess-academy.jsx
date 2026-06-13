@@ -129,6 +129,16 @@ const PUZZLES=[
   {id:"p8",cat:"Pin",diff:2,fen:"4k3/8/8/4q3/3P4/8/8/4RK2 w - - 0 1",sol:["dxe5"],hint:"The queen is absolutely pinned on the e-file by the rook — the pawn captures it for free!"},
   {id:"p9",cat:"Skewer",diff:3,fen:"r7/8/8/k7/8/8/1K6/7R w - - 0 1",sol:["Ra1+"],hint:"Swing the rook to the a-file — the king must flee, exposing the rook on a8 behind it."},
   {id:"p10",cat:"Back rank",diff:2,fen:"3r2k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1",sol:["Rxd8#"],hint:"Trade rooks on the back rank — the king's own pawns leave it with no escape!"},
+  {id:"p11",cat:"Mate in 1",diff:1,fen:"7k/6pp/8/8/8/8/8/R6K w - - 0 1",sol:["Ra8#"],hint:"The rook charges to the 8th rank — the king is trapped by its own pawns!"},
+  {id:"p12",cat:"Mate in 1",diff:1,fen:"7k/8/7K/8/8/8/8/6Q1 w - - 0 1",sol:["Qg7#"],hint:"The queen cuts off every escape while the white king assists from h6."},
+  {id:"p13",cat:"Mate in 2",diff:2,fen:"k7/2R5/2K5/8/8/8/8/8 w - - 0 1",sol:["Rc8+","Ka7","Ra8#"],hint:"Drive the king off the back rank with a check, then the rook delivers mate on the a-file."},
+  {id:"p14",cat:"Fork",diff:2,fen:"8/8/6r1/8/2k5/5N2/8/4K3 w - - 0 1",sol:["Ne5+"],hint:"The knight leaps to e5, forking the king and rook in one elegant move!"},
+  {id:"p15",cat:"Pin",diff:2,fen:"4k3/8/8/4r3/3P4/8/8/4RK2 w - - 0 1",sol:["dxe5"],hint:"The black rook is frozen on the e-file — the pawn captures it for free!"},
+  {id:"p16",cat:"Skewer",diff:3,fen:"8/8/8/8/2k3r1/8/8/R6K w - - 0 1",sol:["Ra4+"],hint:"Swing the rook to the 4th rank — the king must flee, exposing the rook behind it."},
+  {id:"p17",cat:"Discovery",diff:3,fen:"8/8/8/2kr4/8/2B5/8/K1R5 w - - 0 1",sol:["Bd4+"],hint:"Move the bishop to unleash a devastating double check — the king must run while the rook falls!"},
+  {id:"p18",cat:"Endgame",diff:2,fen:"4k3/8/4K3/8/8/8/8/1Q6 w - - 0 1",sol:["Qb8#"],hint:"The queen sweeps to the 8th rank — the white king covers every escape square."},
+  {id:"p19",cat:"Mate in 1",diff:1,fen:"k7/1R6/K7/8/8/8/8/8 w - - 0 1",sol:["Rb8#"],hint:"The rook slides to b8 — king and rook together leave no escape."},
+  {id:"p20",cat:"Fork",diff:2,fen:"r3k3/8/8/8/8/8/8/4K2Q w - - 0 1",sol:["Qe4+"],hint:"The queen flies to e4, checking the king while attacking the rook on a8 along the diagonal!"},
 ];
 const SQ=46;
 
@@ -483,13 +493,15 @@ export default function ChessAcademy({user=null,onSignOut}){
       const iWon=winner===(pCol==="w"?"White":"Black");
       if(gameMode==="ai"){
         const result=gStatus==="checkmate"||gStatus==="timeout"?(iWon?1:0):gStatus==="resign"?0:0.5;
-        const newElo=calcNewElo(elo,DIFF_ELO[diff],result);setElo(newElo);saveProgress(undefined,undefined,undefined,undefined,newElo);
+        const curElo=elRef.current;
+        const newElo=calcNewElo(curElo,DIFF_ELO[diff],result);setElo(newElo);saveProgress(undefined,undefined,undefined,undefined,newElo);
         const sessionResult=gStatus==="checkmate"?(iWon?"win":"loss"):gStatus==="resign"?"loss":gStatus==="timeout"?(iWon?"win":"timeout"):"draw";
         const durationS=gameStartTime.current?Math.round((Date.now()-gameStartTime.current)/1000):0;
         saveGame({result:sessionResult,playerColor:pCol,difficulty:diff,moves:hist.map(m=>m.san),opening,durationS});
-        if((gStatus==="checkmate"||gStatus==="timeout")&&iWon){play("win");const ns={...stats,w:stats.w+1};setStats(ns);saveProgress(undefined,undefined,undefined,ns);}
-        else if(gStatus==="checkmate"||gStatus==="timeout"){play("over");const ns={...stats,l:stats.l+1};setStats(ns);saveProgress(undefined,undefined,undefined,ns);}
-        else if(gStatus!=="resign"){play("over");const ns={...stats,d:stats.d+1};setStats(ns);saveProgress(undefined,undefined,undefined,ns);}
+        const curStats=stRef.current;
+        if((gStatus==="checkmate"||gStatus==="timeout")&&iWon){play("win");const ns={...curStats,w:curStats.w+1};setStats(ns);saveProgress(undefined,undefined,undefined,ns);}
+        else if(gStatus==="checkmate"||gStatus==="timeout"){play("over");const ns={...curStats,l:curStats.l+1};setStats(ns);saveProgress(undefined,undefined,undefined,ns);}
+        else if(gStatus!=="resign"){play("over");const ns={...curStats,d:curStats.d+1};setStats(ns);saveProgress(undefined,undefined,undefined,ns);}
         else{play("over");}
       } else {
         if(gStatus==="checkmate"&&!iWon) play("over");
