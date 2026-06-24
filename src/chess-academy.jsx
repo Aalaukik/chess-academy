@@ -474,13 +474,14 @@ export default function ChessAcademy({user=null,onSignOut}){
 
   function doPromotion(pt){
     if(!promoDialog)return;const g=gRef.current;
+    const promotingColor=g.turn(); // capture before the move changes turn
     const evalBefore=preMoveEval.current||evalPos(g);
     const r=g.move({from:promoDialog.from,to:promoDialog.to,promotion:pt});setPromoDialog(null);
     if(r){
-      const badge=classifyMove(evalBefore,evalPos(g),pCol);
+      const badge=classifyMove(evalBefore,evalPos(g),promotingColor);
       setMoveQualities(q=>[...q,badge]);setLastBadge(badge);setTimeout(()=>setLastBadge(null),2200);
       setLastMv({from:r.from,to:r.to});setSel(null);setLegal([]);play("move");if(g.inCheck())play("check");syncGame(g);
-      const aiC=pCol==="w"?"b":"w";if(!g.isGameOver()&&g.turn()===aiC)setTimeout(()=>runAI(g),300);
+      if(gameMode==="ai"){const aiC=pCol==="w"?"b":"w";if(!g.isGameOver()&&g.turn()===aiC)setTimeout(()=>runAI(g),300);}
     }
   }
 
@@ -542,7 +543,7 @@ export default function ChessAcademy({user=null,onSignOut}){
       if(e.key==="Escape")setScreen("menu");
     }
     window.addEventListener("keydown",onKey);return()=>window.removeEventListener("keydown",onKey);
-  },[screen,hist,lIdx,lTrack,pz]);
+  },[screen,hist,lIdx,lTrack,pz,pzFilter]);
 
   function handlePzClick(sq){
     const g=pzRef.current;if(!g||!pz||pzStatus==="solved"||pzStatus==="wrong")return;
@@ -620,6 +621,7 @@ export default function ChessAcademy({user=null,onSignOut}){
 
   function PromoDlg(){
     if(!promoDialog)return null;
+    const promoColor=gRef.current?.turn()??pCol; // use actual turn so P2P black gets black pieces
     return(
       <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.82)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}}>
         <div style={{background:"#161410",borderRadius:20,padding:"1.75rem",boxShadow:"0 1px 0 rgba(200,168,75,0.1) inset,0 32px 80px rgba(0,0,0,0.7)",borderTop:"1px solid rgba(200,168,75,0.12)"}}>
@@ -627,7 +629,7 @@ export default function ChessAcademy({user=null,onSignOut}){
           <div style={{display:"flex",gap:10}}>
             {[["q","Queen"],["r","Rook"],["b","Bishop"],["n","Knight"]].map(([pt,label])=>(
               <div key={pt} onClick={()=>doPromotion(pt)} style={{width:72,height:72,borderRadius:14,background:"rgba(255,255,255,0.04)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",cursor:"pointer",gap:5,transition:"background .15s,transform .15s"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(200,168,75,0.12)";e.currentTarget.style.transform="scale(1.08)";}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.04)";e.currentTarget.style.transform="";}}>
-                <span style={{fontSize:34,color:pCol==="w"?"#fff":"#111",textShadow:pCol==="w"?"0 0 4px #000,0 1px 5px rgba(0,0,0,.9)":undefined}}>{UNI[`${pCol}${pt.toUpperCase()}`]}</span>
+                <span style={{fontSize:34,color:promoColor==="w"?"#fff":"#111",textShadow:promoColor==="w"?"0 0 4px #000,0 1px 5px rgba(0,0,0,.9)":undefined}}>{UNI[`${promoColor}${pt.toUpperCase()}`]}</span>
                 <span style={{fontSize:10,color:"#8C8476"}}>{label}</span>
               </div>
             ))}
