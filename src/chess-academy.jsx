@@ -123,7 +123,7 @@ const PUZZLES=[
   {id:"p2",cat:"Mate in 1",diff:1,fen:"6k1/5ppp/8/8/2B5/8/5PPP/4R1K1 w - - 0 1",sol:["Re8#"],hint:"The rook heads to the back rank — the bishop covers f7, pawns cover g7 and h7."},
   {id:"p3",cat:"Mate in 1",diff:1,fen:"5k2/8/5K2/8/8/8/8/7Q w - - 0 1",sol:["Qh8#"],hint:"The queen covers the entire 8th rank — the white king traps f7, g7, and e7."},
   {id:"p4",cat:"Mate in 2",diff:2,fen:"7k/5p2/6PK/8/8/8/8/Q7 w - - 0 1",sol:["g7+","Kg8","Qa8#"],hint:"Push the pawn with check to seal the king's escape, then the queen mates on the back rank."},
-  {id:"p5",cat:"Mate in 2",diff:2,fen:"k7/1p6/1K6/8/8/8/8/Q7 w - - 0 1",sol:["Qa6+","Kb8","Qxb7#"],hint:"Check on the a-file forces the king to b8 — then the queen captures b7 with checkmate."},
+  {id:"p5",cat:"Back rank",diff:1,fen:"6k1/5ppp/8/8/8/8/8/1Q4K1 w - - 0 1",sol:["Qb8#"],hint:"The queen swings to the back rank — boxed in by its own pawns, the king has no escape."},
   {id:"p6",cat:"Fork",diff:2,fen:"8/2r1k3/8/8/5N2/8/8/4K3 w - - 0 1",sol:["Nd5+"],hint:"The knight leaps to the center, forking the king and the rook simultaneously!"},
   {id:"p7",cat:"Fork",diff:2,fen:"2r1k3/8/8/8/8/8/Q7/6K1 w - - 0 1",sol:["Qe6+"],hint:"The queen flies to e6 — checking the king while eyeing the rook on c8 along the diagonal."},
   {id:"p8",cat:"Pin",diff:2,fen:"4k3/8/8/4q3/3P4/8/8/4RK2 w - - 0 1",sol:["dxe5"],hint:"The queen is absolutely pinned on the e-file by the rook — the pawn captures it for free!"},
