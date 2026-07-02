@@ -1,0 +1,11 @@
+name: Keep Supabase Alive
+on:
+  schedule:
+    - cron: '0 0 */5 * *'
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          curl "https://fbnumxdkhxxtacicalkd.supabase.co/rest/v1/profiles?select=id&limit=1" \
+          -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}"
